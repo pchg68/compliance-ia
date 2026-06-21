@@ -5,6 +5,10 @@ import { reportRouter } from "./report";
 import { promptRouter } from "./prompt";
 import { alertRouter } from "./alert";
 import { maskerRouter } from "./masker";
+import { citationRouter } from "./citation";
+import { anchorRouter } from "./anchor";
+import { dashboardRouter } from "./dashboard";
+import { proxyRouter } from "./proxy";
 
 export const appRouter = router({
   interaction: interactionRouter,
@@ -13,6 +17,10 @@ export const appRouter = router({
   prompt: promptRouter,
   alert: alertRouter,
   masker: maskerRouter,
+  citation: citationRouter,
+  anchor: anchorRouter,
+  dashboard: dashboardRouter,
+  proxy: proxyRouter,
 });
 
 export type AppRouter = typeof appRouter;
