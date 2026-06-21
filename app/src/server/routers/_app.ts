@@ -9,6 +9,7 @@ import { citationRouter } from "./citation";
 import { anchorRouter } from "./anchor";
 import { dashboardRouter } from "./dashboard";
 import { proxyRouter } from "./proxy";
+import { jurisdictionRouter } from "./jurisdiction";
 
 export const appRouter = router({
   interaction: interactionRouter,
@@ -21,6 +22,7 @@ export const appRouter = router({
   anchor: anchorRouter,
   dashboard: dashboardRouter,
   proxy: proxyRouter,
+  jurisdiction: jurisdictionRouter,
 });
 
 export type AppRouter = typeof appRouter;
