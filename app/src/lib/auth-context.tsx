@@ -1,9 +1,13 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { trpc } from "@/lib/trpc-client";
+
+/** Rotas públicas — acessíveis sem autenticação (landing, marketing). */
+const PUBLIC_ROUTES = ["/landing"];
 
 interface MeData {
   user_id: string;
@@ -81,6 +85,12 @@ export function useOrgId(): string {
 /** Guarda de rota: exige login + vínculo a um escritório. */
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { session, me, loading } = useAuth();
+  const pathname = usePathname();
+
+  // Rotas públicas passam direto, logado ou não.
+  if (PUBLIC_ROUTES.includes(pathname)) {
+    return <>{children}</>;
+  }
 
   if (loading) {
     return (

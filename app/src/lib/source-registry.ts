@@ -15,6 +15,7 @@
 import { pool } from "@/lib/db";
 import { datajudSourceLookup } from "@/lib/datajud-client";
 import { lexmlLookup } from "@/lib/lexml-client";
+import { sumulaLookup, isSumulaKey } from "@/lib/sumula-source";
 import type { SourceLookupResult } from "@/lib/citation-validator";
 import {
   TokenBucket,
@@ -66,8 +67,18 @@ const lexmlConnector: Connector = {
   breaker: new CircuitBreaker(),
 };
 
-// Fontes futuras (STF/STJ para súmulas/precedentes) entram aqui.
-const CONNECTORS: Connector[] = [datajudConnector, lexmlConnector];
+// Súmulas: consulta à base local (sem rede). Limites generosos pois é DB interno.
+const sumulaConnector: Connector = {
+  name: "Sumula",
+  matches: (k) => isSumulaKey(k),
+  lookup: (k) => sumulaLookup(k),
+  bucket: new TokenBucket(1000, 1000),
+  breaker: new CircuitBreaker(),
+};
+
+// Precedentes sem número CNJ (REsp/RE soltos) não têm fonte de lookup confiável
+// hoje -> permanecem nao_verificavel honestamente (invariante 3).
+const CONNECTORS: Connector[] = [datajudConnector, lexmlConnector, sumulaConnector];
 
 function pickConnector(canonicalKey: string): Connector | null {
   return CONNECTORS.find((c) => c.matches(canonicalKey)) ?? null;
