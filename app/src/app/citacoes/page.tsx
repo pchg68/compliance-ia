@@ -35,16 +35,29 @@ function ConfidenceBar({ value }: { value: number | null }) {
   );
 }
 
+interface ValidatedCitation {
+  raw_text: string;
+  cite_type: string;
+  canonical_key: string | null;
+  status: string;
+  source: string | null;
+  source_ref: string | null;
+  evidence_excerpt: string | null;
+  confidence: number | null;
+}
+
 export default function CitacoesPage() {
   const [text, setText] = useState("");
-  const [showValidation, setShowValidation] = useState(false);
 
   const extract = trpc.citation.extract.useQuery(
     { text },
     { enabled: text.length > 10 }
   );
 
+  const validate = trpc.citation.validateText.useMutation();
+
   const citationCount = extract.data?.length ?? 0;
+  const validated = validate.data?.citations as ValidatedCitation[] | undefined;
 
   return (
     <>
@@ -76,15 +89,21 @@ export default function CitacoesPage() {
               className="w-full border border-gray-200 rounded-lg p-4 text-sm min-h-[160px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-y bg-gray-50 placeholder-gray-400 transition-colors focus:bg-white"
               placeholder="Ex.: Conforme art. 489, § 1º, do CPC, e o entendimento firmado no REsp 1.234.567/SP (Tema 1.001/STJ), é dever do julgador enfrentar todos os argumentos deduzidos. Vide também Súmula Vinculante 10/STF e a Lei nº 11.101/2005, art. 83..."
               value={text}
-              onChange={(e) => { setText(e.target.value); setShowValidation(false); }}
+              onChange={(e) => { setText(e.target.value); validate.reset(); }}
             />
             {citationCount > 0 && (
               <div className="mt-4 flex justify-end">
                 <button
-                  onClick={() => setShowValidation(true)}
-                  className="px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm hover:shadow"
+                  onClick={() => validate.mutate({ text })}
+                  disabled={validate.isPending}
+                  className="px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm hover:shadow disabled:opacity-60 flex items-center gap-2"
                 >
-                  Validar {citationCount} citação(ões) contra fontes oficiais
+                  {validate.isPending && (
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  )}
+                  {validate.isPending
+                    ? "Validando contra fontes oficiais..."
+                    : `Validar ${citationCount} citação(ões) contra fontes oficiais`}
                 </button>
               </div>
             )}
@@ -121,43 +140,49 @@ export default function CitacoesPage() {
             </div>
           )}
 
-          {/* Resultado da validação (simulado para demo — em produção, chamaria citation.validate) */}
-          {showValidation && extract.data && extract.data.length > 0 && (
+          {/* Erro de validação */}
+          {validate.isError && (
+            <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-sm text-red-700">
+              Falha ao validar contra as fontes oficiais. Verifique a conexão e tente novamente.
+            </div>
+          )}
+
+          {/* Resultado real da validação */}
+          {validated && validated.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-50 bg-gradient-to-r from-blue-50 to-indigo-50">
                 <div className="flex items-center justify-between">
                   <h2 className="font-semibold text-gray-900 text-sm">Resultado da validação</h2>
-                  <span className="text-xs text-gray-500">
-                    Fonte: DATAJUD/CNJ
-                  </span>
+                  <span className="text-xs text-gray-500">Fontes: DATAJUD/CNJ · LexML</span>
                 </div>
               </div>
               <div className="divide-y divide-gray-50">
-                {extract.data.map((c: {
-                  raw_text: string; cite_type: string; canonical_key: string | null;
-                }, i: number) => {
-                  const hasCnj = c.canonical_key?.startsWith("cnj:");
-                  const status = hasCnj ? "nao_verificavel" : "nao_verificavel";
-                  return (
-                    <div key={i} className="px-6 py-4 flex items-center gap-4">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-900 text-sm">{c.raw_text}</p>
+                {validated.map((c, i) => (
+                  <div key={i} className="px-6 py-4 flex items-center gap-4">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-900 text-sm">{c.raw_text}</p>
+                      <div className="flex items-center gap-2 mt-1">
                         {c.canonical_key && (
-                          <p className="font-mono text-xs text-gray-400 mt-1">{c.canonical_key}</p>
+                          <span className="font-mono text-xs text-gray-400">{c.canonical_key}</span>
+                        )}
+                        {c.source_ref && (
+                          <a href={c.source_ref} target="_blank" rel="noopener noreferrer"
+                            className="text-xs text-blue-600 hover:underline">
+                            ver fonte ↗
+                          </a>
                         )}
                       </div>
-                      <ConfidenceBar value={null} />
-                      <StatusBadge status={status} />
                     </div>
-                  );
-                })}
+                    {c.source && <span className="text-xs text-gray-400 shrink-0">{c.source}</span>}
+                    <ConfidenceBar value={c.confidence} />
+                    <StatusBadge status={c.status} />
+                  </div>
+                ))}
               </div>
-              <div className="px-6 py-4 bg-amber-50/50 border-t border-amber-100">
-                <p className="text-xs text-amber-700">
-                  <strong>Nota:</strong> A validação em tempo real contra DATAJUD/CNJ requer o banco de dados ativo.
-                  Em produção, cada citação com número CNJ é verificada contra a base oficial do Conselho Nacional de Justiça.
-                  Legislação e súmulas serão validadas via LexML e portais dos tribunais superiores (em desenvolvimento).
-                </p>
+              <div className="px-6 py-4 bg-gray-50/50 border-t border-gray-100 flex gap-6 text-xs text-gray-600">
+                <span><strong className="text-emerald-600">{validate.data!.by_status.confirmada}</strong> confirmadas</span>
+                <span><strong className="text-red-600">{validate.data!.by_status.nao_localizada}</strong> não localizadas</span>
+                <span><strong className="text-gray-500">{validate.data!.by_status.nao_verificavel}</strong> não verificáveis</span>
               </div>
             </div>
           )}
