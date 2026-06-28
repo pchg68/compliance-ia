@@ -2,11 +2,11 @@ import { z } from "zod/v4";
 import { publicProcedure, router } from "../trpc/init";
 import { pool } from "@/lib/db";
 import { extractCitations } from "@/lib/citation-extractor";
-import { validateAllCitations, type SourceLookupFn, type SourceLookupResult } from "@/lib/citation-validator";
+import { validateAllCitations, type SourceLookupFn } from "@/lib/citation-validator";
+import { datajudSourceLookup } from "@/lib/datajud-client";
 
-const stubLookup: SourceLookupFn = async (canonicalKey, citeType) => {
-  // Em produção: consultar DATAJUD, STF, STJ, LexML, Planalto
-  // Stub: verificar no cache local se existe
+const sourceLookup: SourceLookupFn = async (canonicalKey, citeType) => {
+  // 1. Verificar cache local primeiro
   const cached = await pool.query(
     `SELECT payload, fetched_at, ttl_seconds FROM source_cache WHERE canonical_key = $1`,
     [canonicalKey]
@@ -19,7 +19,7 @@ const stubLookup: SourceLookupFn = async (canonicalKey, citeType) => {
       const payload = row.payload as { found: boolean; content: string | null; revoked: boolean; source_ref: string | null };
       return {
         found: payload.found,
-        source: citeType === "legislacao" ? "Planalto" : "STJ/STF",
+        source: citeType === "legislacao" ? "Planalto" : "DATAJUD/CNJ",
         source_ref: payload.source_ref,
         content: payload.content,
         revoked: payload.revoked,
@@ -27,6 +27,29 @@ const stubLookup: SourceLookupFn = async (canonicalKey, citeType) => {
     }
   }
 
+  // 2. Consultar DATAJUD para processos CNJ
+  const datajudResult = await datajudSourceLookup(canonicalKey, citeType);
+  if (datajudResult) {
+    // Salvar no cache
+    await pool.query(
+      `INSERT INTO source_cache (canonical_key, payload, fetched_at, ttl_seconds)
+       VALUES ($1, $2, now(), $3)
+       ON CONFLICT (canonical_key) DO UPDATE SET payload = $2, fetched_at = now(), ttl_seconds = $3`,
+      [
+        canonicalKey,
+        JSON.stringify({
+          found: datajudResult.found,
+          content: datajudResult.content,
+          revoked: datajudResult.revoked,
+          source_ref: datajudResult.source_ref,
+        }),
+        86400,
+      ]
+    );
+    return datajudResult;
+  }
+
+  // 3. Fontes futuras: STF, STJ (jurisprudência), LexML, Planalto (legislação)
   return null;
 };
 
@@ -47,7 +70,7 @@ export const citationRouter = router({
     )
     .mutation(async ({ input }) => {
       const citations = extractCitations(input.response_text);
-      const results = await validateAllCitations(citations, stubLookup);
+      const results = await validateAllCitations(citations, sourceLookup);
 
       for (const r of results) {
         await pool.query(

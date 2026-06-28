@@ -1,4 +1,5 @@
 import { router } from "../trpc/init";
+import { authRouter } from "./auth";
 import { interactionRouter } from "./interaction";
 import { riskRouter } from "./risk";
 import { reportRouter } from "./report";
@@ -12,6 +13,7 @@ import { proxyRouter } from "./proxy";
 import { jurisdictionRouter } from "./jurisdiction";
 
 export const appRouter = router({
+  auth: authRouter,
   interaction: interactionRouter,
   risk: riskRouter,
   report: reportRouter,
