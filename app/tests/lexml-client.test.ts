@@ -1,5 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { canonicalToUrn } from "../src/lib/lexml-client";
+import { canonicalToUrn, isNotFoundPage } from "../src/lib/lexml-client";
+
+describe("LexML — detecção de página 'não encontrada'", () => {
+  it("detecta marcador de não encontrado", () => {
+    expect(isNotFoundPage("<html><body>URN não encontrada</body></html>")).toBe(true);
+    expect(isNotFoundPage("<html>nao encontrado</html>")).toBe(true);
+  });
+
+  it("detecta página curta como não encontrada", () => {
+    expect(isNotFoundPage("<html>erro</html>")).toBe(true);
+  });
+
+  it("trata página grande de norma real como encontrada", () => {
+    const big = "<html><title>Lei 13.105/2015</title>" + "x".repeat(6000) + "</html>";
+    expect(isNotFoundPage(big)).toBe(false);
+  });
+});
 
 describe("LexML — conversão de chave canônica para URN", () => {
   it("converte lei federal com ano", () => {
@@ -12,9 +28,9 @@ describe("LexML — conversão de chave canônica para URN", () => {
     expect(canonicalToUrn("br:federal:lei:8078")).toBe("urn:lex:br:federal:lei:8078");
   });
 
-  it("converte constituição federal", () => {
+  it("converte constituição federal (com sufixo exigido pelo LexML)", () => {
     expect(canonicalToUrn("br:federal:cf:1988!art5")).toBe(
-      "urn:lex:br:federal:constituicao:1988"
+      "urn:lex:br:federal:constituicao:1988;1988"
     );
   });
 

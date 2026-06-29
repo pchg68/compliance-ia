@@ -1,11 +1,12 @@
 /**
- * Conector de legislação federal via LexML (padrão SRU / CQL).
- * Endpoint oficial documentado; configurável por env. Invariante 3 do produto:
- * o que não for confirmado em fonte oficial é tratado como não-verificável —
- * este conector NUNCA fabrica conteúdo de norma.
+ * Conector de legislação federal via LexML.
+ * Usa o resolvedor de URN oficial (https://www.lexml.gov.br/urn/{urn}): uma URN
+ * existente devolve a página da norma; uma inexistente devolve página curta com
+ * o marcador "não encontrado". Verificado contra a API real em 2026-06.
+ * Invariante 3: o que não for confirmado é não-verificável — nunca fabrica norma.
  */
 
-const LEXML_SRU = process.env.LEXML_SRU_URL ?? "https://www.lexml.gov.br/busca/SRU";
+const LEXML_URN_BASE = process.env.LEXML_URN_URL ?? "https://www.lexml.gov.br/urn";
 
 export interface LegislacaoLookup {
   found: boolean;
@@ -40,7 +41,8 @@ export function canonicalToUrn(canonicalKey: string): string | null {
   if (!tipoUrn) return null;
 
   if (tipo === "cf") {
-    return `urn:lex:br:${esfera}:constituicao:1988`;
+    // O resolvedor LexML exige o sufixo de identificação (;1988) para a CF/1988.
+    return `urn:lex:br:${esfera}:constituicao:1988;1988`;
   }
 
   const [numero, ano] = numRaw.split("/");
@@ -51,18 +53,21 @@ export function canonicalToUrn(canonicalKey: string): string | null {
   return `urn:lex:br:${esfera}:${tipoUrn}:${numero}`;
 }
 
-/** Extrai numberOfRecords do envelope SRU (parse mínimo e defensivo, sem dep de XML). */
-function parseRecordCount(xml: string): number {
-  const m = xml.match(/<(?:\w+:)?numberOfRecords>\s*(\d+)\s*<\/(?:\w+:)?numberOfRecords>/i);
-  return m ? parseInt(m[1], 10) : 0;
+/** Página de URN inexistente é curta e traz o marcador "não encontrado". */
+export function isNotFoundPage(html: string): boolean {
+  if (/n[aã]o\s+encontrad/i.test(html)) return true;
+  // Heurística de tamanho: páginas de norma real são grandes (>5KB);
+  // as de erro ficam na casa de ~1KB.
+  if (html.length < 2000) return true;
+  return false;
 }
 
-/** Extrai um título/identificador legível do primeiro registro, se houver. */
-function parseFirstTitle(xml: string): string | null {
-  const m =
-    xml.match(/<(?:dc:)?title>([^<]+)<\/(?:dc:)?title>/i) ??
-    xml.match(/<(?:\w+:)?localidade>[^<]*<\/(?:\w+:)?localidade>/i);
-  return m ? m[1]?.trim() ?? null : null;
+/** Extrai o título legível da página da norma, se presente. */
+function parseTitle(html: string): string | null {
+  const m = html.match(/<title>([^<]+)<\/title>/i);
+  if (!m) return null;
+  // remove sufixo do portal ("- LexML" etc.)
+  return m[1].replace(/\s*[-–|]\s*LexML.*$/i, "").trim() || null;
 }
 
 export async function lexmlLookup(
@@ -72,14 +77,9 @@ export async function lexmlLookup(
   const urn = canonicalToUrn(canonicalKey);
   if (!urn) return null;
 
-  // CQL: busca exata por URN no acervo
-  const cql = `urn="${urn}"`;
-  const url =
-    `${LEXML_SRU}?operation=searchRetrieve&version=1.1` +
-    `&query=${encodeURIComponent(cql)}&maximumRecords=1`;
-
+  const url = `${LEXML_URN_BASE}/${urn}`;
   const res = await fetch(url, {
-    headers: { Accept: "application/xml" },
+    headers: { Accept: "text/html" },
     signal,
   });
 
@@ -94,28 +94,29 @@ export async function lexmlLookup(
     };
   }
 
-  const xml = await res.text();
-  const count = parseRecordCount(xml);
+  const html = await res.text();
 
-  if (count === 0) {
+  if (isNotFoundPage(html)) {
     return {
       found: false,
       source: "LexML",
-      source_ref: `https://www.lexml.gov.br/urn/${urn}`,
+      source_ref: url,
       content: null,
       revoked: false,
       http_status: res.status,
     };
   }
 
-  const title = parseFirstTitle(xml);
+  const title = parseTitle(html);
   return {
     found: true,
     source: "LexML",
-    source_ref: `https://www.lexml.gov.br/urn/${urn}`,
+    source_ref: url,
     // Apenas metadados oficiais recuperados — nunca o texto inferido da norma.
-    content: title ? `Norma localizada no acervo LexML: ${title}` : `Norma localizada no acervo LexML (URN ${urn}).`,
-    revoked: false, // vigência detalhada exige consulta ao texto consolidado (fase futura)
+    content: title
+      ? `Norma localizada no acervo LexML: ${title}`
+      : `Norma localizada no acervo LexML (URN ${urn}).`,
+    revoked: false, // vigência detalhada exige o texto consolidado (fase futura)
     http_status: res.status,
   };
 }
