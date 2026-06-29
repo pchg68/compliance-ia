@@ -8,7 +8,7 @@ export const anchorRouter = router({
   createEpoch: publicProcedure
     .input(
       z.object({
-        org_id: z.string().uuid(),
+        org_id: z.string().guid(),
         from_seq: z.number().int(),
         to_seq: z.number().int(),
       })
@@ -51,8 +51,8 @@ export const anchorRouter = router({
   verify: publicProcedure
     .input(
       z.object({
-        org_id: z.string().uuid(),
-        anchor_id: z.string().uuid(),
+        org_id: z.string().guid(),
+        anchor_id: z.string().guid(),
       })
     )
     .query(async ({ input }) => {
@@ -95,7 +95,7 @@ export const anchorRouter = router({
     }),
 
   latest: publicProcedure
-    .input(z.object({ org_id: z.string().uuid() }))
+    .input(z.object({ org_id: z.string().guid() }))
     .query(async ({ input }) => {
       const result = await pool.query(
         `SELECT id, epoch_from_seq, epoch_to_seq, encode(merkle_root, 'hex') as merkle_root, anchored_at

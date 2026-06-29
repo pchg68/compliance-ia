@@ -52,7 +52,7 @@ export const jurisdictionRouter = router({
   configure: publicProcedure
     .input(
       z.object({
-        org_id: z.string().uuid(),
+        org_id: z.string().guid(),
         jurisdiction: z.string(),
         active: z.boolean().default(true),
       })

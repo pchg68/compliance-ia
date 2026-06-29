@@ -4,7 +4,7 @@ import { pool } from "@/lib/db";
 
 export const dashboardRouter = router({
   summary: publicProcedure
-    .input(z.object({ org_id: z.string().uuid() }))
+    .input(z.object({ org_id: z.string().guid() }))
     .query(async ({ input }) => {
       const result = await pool.query(
         `SELECT * FROM v_dashboard_summary WHERE org_id = $1`,
@@ -16,7 +16,7 @@ export const dashboardRouter = router({
   daily: publicProcedure
     .input(
       z.object({
-        org_id: z.string().uuid(),
+        org_id: z.string().guid(),
         days: z.number().int().max(90).default(30),
       })
     )
@@ -31,7 +31,7 @@ export const dashboardRouter = router({
     }),
 
   citationStats: publicProcedure
-    .input(z.object({ org_id: z.string().uuid() }))
+    .input(z.object({ org_id: z.string().guid() }))
     .query(async ({ input }) => {
       const result = await pool.query(
         `SELECT * FROM v_citation_stats WHERE org_id = $1`,
@@ -41,7 +41,7 @@ export const dashboardRouter = router({
     }),
 
   alertStats: publicProcedure
-    .input(z.object({ org_id: z.string().uuid() }))
+    .input(z.object({ org_id: z.string().guid() }))
     .query(async ({ input }) => {
       const result = await pool.query(
         `SELECT severity, status, COUNT(*)::int AS count
@@ -56,7 +56,7 @@ export const dashboardRouter = router({
   topUsers: publicProcedure
     .input(
       z.object({
-        org_id: z.string().uuid(),
+        org_id: z.string().guid(),
         limit: z.number().int().max(50).default(10),
       })
     )

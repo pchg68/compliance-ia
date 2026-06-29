@@ -6,8 +6,8 @@ export const alertRouter = router({
   create: publicProcedure
     .input(
       z.object({
-        org_id: z.string().uuid(),
-        interaction_id: z.string().uuid().nullable().optional(),
+        org_id: z.string().guid(),
+        interaction_id: z.string().guid().nullable().optional(),
         severity: z.enum(["critical", "high", "medium", "low", "info"]),
         category: z.string(),
         title: z.string(),
@@ -33,7 +33,7 @@ export const alertRouter = router({
   list: publicProcedure
     .input(
       z.object({
-        org_id: z.string().uuid(),
+        org_id: z.string().guid(),
         status: z.enum(["open", "acknowledged", "resolved", "dismissed"]).optional(),
         severity: z.enum(["critical", "high", "medium", "low", "info"]).optional(),
         limit: z.number().int().max(100).default(50),
@@ -68,8 +68,8 @@ export const alertRouter = router({
   resolve: publicProcedure
     .input(
       z.object({
-        alert_id: z.string().uuid(),
-        resolved_by: z.string().uuid(),
+        alert_id: z.string().guid(),
+        resolved_by: z.string().guid(),
         status: z.enum(["acknowledged", "resolved", "dismissed"]),
       })
     )
@@ -83,7 +83,7 @@ export const alertRouter = router({
     }),
 
   summary: publicProcedure
-    .input(z.object({ org_id: z.string().uuid() }))
+    .input(z.object({ org_id: z.string().guid() }))
     .query(async ({ input }) => {
       const result = await pool.query(
         `SELECT severity, status, COUNT(*)::int AS count

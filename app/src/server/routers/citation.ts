@@ -69,7 +69,7 @@ export const citationRouter = router({
 
   /** Valida texto avulso (página do validador) sem persistir em trilha. */
   validateText: publicProcedure
-    .input(z.object({ text: z.string().max(200_000), org_id: z.string().uuid().nullable().optional() }))
+    .input(z.object({ text: z.string().max(200_000), org_id: z.string().guid().nullable().optional() }))
     .mutation(async ({ input }) => {
       const citations = extractCitations(input.text);
       const map = await lookupMany(
@@ -84,8 +84,8 @@ export const citationRouter = router({
   validate: publicProcedure
     .input(
       z.object({
-        org_id: z.string().uuid(),
-        interaction_id: z.string().uuid(),
+        org_id: z.string().guid(),
+        interaction_id: z.string().guid(),
         response_text: z.string().max(200_000),
       })
     )
@@ -101,7 +101,7 @@ export const citationRouter = router({
     }),
 
   listByInteraction: publicProcedure
-    .input(z.object({ interaction_id: z.string().uuid() }))
+    .input(z.object({ interaction_id: z.string().guid() }))
     .query(async ({ input }) => {
       const result = await pool.query(
         `SELECT * FROM citation_check WHERE interaction_id = $1 ORDER BY checked_at`,

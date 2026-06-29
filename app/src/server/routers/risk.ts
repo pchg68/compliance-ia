@@ -8,8 +8,8 @@ export const riskRouter = router({
   assess: publicProcedure
     .input(
       z.object({
-        org_id: z.string().uuid(),
-        interaction_id: z.string().uuid(),
+        org_id: z.string().guid(),
+        interaction_id: z.string().guid(),
         signals: z.object({
           task_type: z.string(),
           data_sensitivity: z.array(z.string()),
@@ -56,8 +56,8 @@ export const riskRouter = router({
   submitChecklist: publicProcedure
     .input(
       z.object({
-        org_id: z.string().uuid(),
-        interaction_id: z.string().uuid(),
+        org_id: z.string().guid(),
+        interaction_id: z.string().guid(),
         items: z.array(
           z.object({
             eixo: z.string(),
@@ -66,8 +66,8 @@ export const riskRouter = router({
             automatico: z.boolean(),
           })
         ),
-        attested_by: z.string().uuid(),
-        approver_id: z.string().uuid().nullable().optional(),
+        attested_by: z.string().guid(),
+        approver_id: z.string().guid().nullable().optional(),
       })
     )
     .mutation(async ({ input }) => {
@@ -93,8 +93,8 @@ export const riskRouter = router({
   approveChecklist: publicProcedure
     .input(
       z.object({
-        checklist_id: z.string().uuid(),
-        approver_id: z.string().uuid(),
+        checklist_id: z.string().guid(),
+        approver_id: z.string().guid(),
         status: z.enum(["aprovado", "bloqueado", "ressalva"]),
       })
     )

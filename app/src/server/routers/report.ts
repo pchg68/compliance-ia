@@ -6,7 +6,7 @@ export const reportRouter = router({
   compliance: publicProcedure
     .input(
       z.object({
-        org_id: z.string().uuid(),
+        org_id: z.string().guid(),
         period_start: z.string().datetime(),
         period_end: z.string().datetime(),
       })

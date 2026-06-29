@@ -6,7 +6,7 @@ export const promptRouter = router({
   create: publicProcedure
     .input(
       z.object({
-        org_id: z.string().uuid(),
+        org_id: z.string().guid(),
         title: z.string().min(1),
         description: z.string().nullable().optional(),
         category: z.string().min(1),
@@ -14,7 +14,7 @@ export const promptRouter = router({
         risk_class: z.enum(["excessivo", "alto", "moderado", "baixo"]),
         template_text: z.string().min(1),
         variables: z.array(z.object({ name: z.string(), description: z.string().optional() })).default([]),
-        approved_by: z.string().uuid().nullable().optional(),
+        approved_by: z.string().guid().nullable().optional(),
       })
     )
     .mutation(async ({ input }) => {
@@ -35,7 +35,7 @@ export const promptRouter = router({
   list: publicProcedure
     .input(
       z.object({
-        org_id: z.string().uuid(),
+        org_id: z.string().guid(),
         category: z.string().optional(),
         active_only: z.boolean().default(true),
       })
@@ -63,7 +63,7 @@ export const promptRouter = router({
     }),
 
   get: publicProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.string().guid() }))
     .query(async ({ input }) => {
       const result = await pool.query(
         `SELECT * FROM prompt_template WHERE id = $1`,
@@ -75,7 +75,7 @@ export const promptRouter = router({
   render: publicProcedure
     .input(
       z.object({
-        template_id: z.string().uuid(),
+        template_id: z.string().guid(),
         values: z.record(z.string(), z.string()),
       })
     )
@@ -101,7 +101,7 @@ export const promptRouter = router({
     }),
 
   deactivate: publicProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.string().guid() }))
     .mutation(async ({ input }) => {
       await pool.query(
         `UPDATE prompt_template SET active = false, updated_at = now() WHERE id = $1`,

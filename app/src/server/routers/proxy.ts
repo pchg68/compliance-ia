@@ -9,8 +9,8 @@ export const proxyRouter = router({
   forward: publicProcedure
     .input(
       z.object({
-        org_id: z.string().uuid(),
-        user_id: z.string().uuid(),
+        org_id: z.string().guid(),
+        user_id: z.string().guid(),
         provider: z.string(),
         model: z.string(),
         prompt: z.string(),
@@ -111,7 +111,7 @@ export const proxyRouter = router({
   listRequests: publicProcedure
     .input(
       z.object({
-        org_id: z.string().uuid(),
+        org_id: z.string().guid(),
         limit: z.number().int().max(100).default(50),
       })
     )

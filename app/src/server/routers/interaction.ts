@@ -4,8 +4,8 @@ import { pool } from "@/lib/db";
 import { computeRowHash, computeContentHash, type HashableInteraction } from "@/lib/hash";
 
 const captureInput = z.object({
-  org_id: z.string().uuid(),
-  user_id: z.string().uuid(),
+  org_id: z.string().guid(),
+  user_id: z.string().guid(),
   provider: z.string(),
   model: z.string(),
   task_type: z.string(),
@@ -14,7 +14,7 @@ const captureInput = z.object({
   prompt_masked: z.string(),
   response_original: z.string().nullable(),
   response_masked: z.string().nullable(),
-  policy_id: z.string().uuid(),
+  policy_id: z.string().guid(),
   decision: z.enum(["allow", "masked", "approval", "block"]),
   pii_technique: z.record(z.string(), z.string()).nullable().optional(),
   injection_flags: z.any().nullable().optional(),
@@ -127,7 +127,7 @@ export const interactionRouter = router({
   }),
 
   list: publicProcedure
-    .input(z.object({ org_id: z.string().uuid(), limit: z.number().int().max(100).default(50) }))
+    .input(z.object({ org_id: z.string().guid(), limit: z.number().int().max(100).default(50) }))
     .query(async ({ input }) => {
       const result = await pool.query(
         `SELECT id, seq, user_id, provider, model, task_type, risk_class,
@@ -142,7 +142,7 @@ export const interactionRouter = router({
     }),
 
   verifyChain: publicProcedure
-    .input(z.object({ org_id: z.string().uuid() }))
+    .input(z.object({ org_id: z.string().guid() }))
     .query(async ({ input }) => {
       const result = await pool.query(
         `SELECT seq, org_id, user_id, provider, model, task_type, risk_class,
