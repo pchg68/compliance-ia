@@ -11,6 +11,7 @@ import { anchorRouter } from "./anchor";
 import { dashboardRouter } from "./dashboard";
 import { proxyRouter } from "./proxy";
 import { jurisdictionRouter } from "./jurisdiction";
+import { onboardingRouter } from "./onboarding";
 
 export const appRouter = router({
   auth: authRouter,
@@ -25,6 +26,7 @@ export const appRouter = router({
   dashboard: dashboardRouter,
   proxy: proxyRouter,
   jurisdiction: jurisdictionRouter,
+  onboarding: onboardingRouter,
 });
 
 export type AppRouter = typeof appRouter;

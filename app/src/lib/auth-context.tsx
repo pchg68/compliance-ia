@@ -233,6 +233,64 @@ function LoginScreen() {
 
 function NoOrgScreen({ email }: { email: string }) {
   const { signOut } = useAuth();
+  const [mode, setMode] = useState<"choose" | "create">("choose");
+  const [orgName, setOrgName] = useState("");
+  const [jurisdiction, setJurisdiction] = useState("BR");
+  const [error, setError] = useState<string | null>(null);
+
+  const createOrg = trpc.onboarding.createOrg.useMutation({
+    onSuccess: () => window.location.reload(),
+    onError: (e) => setError(e.message),
+  });
+
+  if (mode === "create") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 max-w-md w-full">
+          <button onClick={() => setMode("choose")} className="text-sm text-gray-400 hover:text-gray-600 mb-4 flex items-center gap-1">
+            ← Voltar
+          </button>
+          <h2 className="font-semibold text-gray-900 mb-1">Criar escritório</h2>
+          <p className="text-sm text-gray-500 mb-6">Você será o administrador da nova organização.</p>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Nome do escritório</label>
+              <input
+                type="text"
+                value={orgName}
+                onChange={(e) => setOrgName(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                placeholder="Silva & Associados Advogados"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Jurisdição</label>
+              <select
+                value={jurisdiction}
+                onChange={(e) => setJurisdiction(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              >
+                <option value="BR">Brasil (PL 2338 / OAB / ANPD)</option>
+                <option value="EU">União Europeia (AI Act / GDPR)</option>
+              </select>
+            </div>
+            {error && (
+              <div className="bg-red-50 text-red-700 text-sm rounded-lg px-3 py-2 border border-red-100">{error}</div>
+            )}
+            <button
+              onClick={() => createOrg.mutate({ org_name: orgName, jurisdiction })}
+              disabled={orgName.trim().length < 2 || createOrg.isPending}
+              className="w-full bg-blue-600 text-white text-sm font-medium rounded-lg py-2.5 hover:bg-blue-700 transition-colors disabled:opacity-60"
+            >
+              {createOrg.isPending ? "Criando..." : "Criar escritório"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 max-w-md text-center">
@@ -241,17 +299,20 @@ function NoOrgScreen({ email }: { email: string }) {
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
         </div>
-        <h2 className="font-semibold text-gray-900 mb-2">Conta sem vínculo a um escritório</h2>
+        <h2 className="font-semibold text-gray-900 mb-2">Sem vínculo a um escritório</h2>
         <p className="text-sm text-gray-500 mb-6">
-          O e-mail <strong>{email}</strong> está autenticado, mas ainda não foi associado a um escritório no JurisOS Guard.
-          Solicite ao administrador da sua organização que vincule seu acesso.
+          <strong>{email}</strong> está autenticado, mas não está vinculado a nenhum escritório.
         </p>
-        <button
-          onClick={signOut}
-          className="text-sm text-blue-600 font-medium hover:underline"
-        >
-          Sair
-        </button>
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={() => setMode("create")}
+            className="w-full bg-blue-600 text-white text-sm font-medium rounded-lg py-2.5 hover:bg-blue-700 transition-colors"
+          >
+            Criar novo escritório
+          </button>
+          <p className="text-xs text-gray-400">ou aguarde o convite de um administrador</p>
+          <button onClick={signOut} className="text-sm text-gray-400 hover:text-gray-600">Sair</button>
+        </div>
       </div>
     </div>
   );
