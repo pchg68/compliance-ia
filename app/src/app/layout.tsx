@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "JurisOS Guard — Governança de IA Jurídica",
+  title: "Vexiajuris Guard — Governança de IA Jurídica",
   description: "Auditoria imutável, validação de citações e classificação de risco para escritórios de advocacia.",
 };
 
@@ -27,8 +27,9 @@ export default function RootLayout({
     <html
       lang="pt-BR"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full bg-slate-50 text-gray-900">
+      <body className="min-h-full bg-slate-50 text-gray-900" suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>

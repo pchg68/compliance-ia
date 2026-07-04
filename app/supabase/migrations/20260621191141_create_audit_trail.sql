@@ -1,4 +1,4 @@
--- Migration: trilha de auditoria imutável (coração jurídico do JurisOS Guard)
+-- Migration: trilha de auditoria imutável (coração jurídico do Vexiajuris Guard)
 -- Tabelas: organization, app_user, policy, ai_interaction, token_map, audit_anchor
 -- Inclui: RLS por org_id, trigger append-only, REVOKE de mutação
 
