@@ -11,7 +11,7 @@ export interface TimestampToken {
   stub: true;
 }
 
-const STUB_SECRET = "jurisos-dev-tsa-stub-key";
+const STUB_SECRET = "vexiajuris-dev-tsa-stub-key";
 
 export function requestTimestamp(merkleRoot: Buffer): TimestampToken {
   const now = new Date().toISOString();

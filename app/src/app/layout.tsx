@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "JurisOS Guard — Governança de IA Jurídica",
+  title: "Vexiajuris Guard — Governança de IA Jurídica",
   description: "Auditoria imutável, validação de citações e classificação de risco para escritórios de advocacia.",
 };
 

@@ -145,7 +145,7 @@ export default function RelatoriosPage() {
                   <div>
                     <div className="flex items-center gap-2 mb-3">
                       <div className="w-8 h-8 rounded bg-slate-900 flex items-center justify-center text-white font-bold text-xs">JG</div>
-                      <span className="font-bold text-slate-900">JurisOS Guard</span>
+                      <span className="font-bold text-slate-900">Vexiajuris Guard</span>
                     </div>
                     <h2 className="text-xl font-bold text-gray-900">Relatório de Conformidade no Uso de IA</h2>
                     <p className="text-sm text-gray-500 mt-1">Evidência de diligência — Recomendação OAB nº 001/2024</p>
@@ -227,7 +227,7 @@ export default function RelatoriosPage() {
               <div className="px-10 py-6 border-t border-gray-100 bg-gray-50/50 rounded-b-xl">
                 <p className="text-xs text-gray-500 leading-relaxed">
                   Este relatório constitui evidência de diligência no uso de inteligência artificial, gerado a partir
-                  da trilha de auditoria imutável do JurisOS Guard. A integridade dos registros é assegurada por cadeia
+                  da trilha de auditoria imutável do Vexiajuris Guard. A integridade dos registros é assegurada por cadeia
                   de hash criptográfico (SHA-256) com encadeamento sequencial, impedindo alteração retroativa.
                   O escritório é usuário de IA e responsável pela supervisão humana das peças produzidas.
                 </p>
