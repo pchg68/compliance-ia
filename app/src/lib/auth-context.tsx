@@ -146,7 +146,7 @@ function LoginScreen() {
           <div className="w-14 h-14 mx-auto rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xl mb-4">
             JG
           </div>
-          <h1 className="text-2xl font-bold text-white">JurisOS Guard</h1>
+          <h1 className="text-2xl font-bold text-white">Vexiajuris Guard</h1>
           <p className="text-sm text-slate-400 mt-1">Governança e auditoria de IA jurídica</p>
         </div>
 

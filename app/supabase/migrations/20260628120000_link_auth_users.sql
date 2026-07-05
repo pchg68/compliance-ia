@@ -35,7 +35,7 @@ INSERT INTO app_user (id, org_id, email, role)
 VALUES (
   '00000000-0000-0000-0000-0000000000a1',
   '00000000-0000-0000-0000-000000000001',
-  'admin@demo.jurisos.local',
+  'admin@demo.vexiajuris.local',
   'admin'
 )
 ON CONFLICT (org_id, email) DO NOTHING;

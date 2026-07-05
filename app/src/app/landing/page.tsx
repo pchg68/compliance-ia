@@ -24,7 +24,7 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">JG</div>
-            <span className="font-bold text-gray-900">JurisOS Guard</span>
+            <span className="font-bold text-gray-900">Vexiajuris Guard</span>
           </div>
           <Link href="/" className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors">
             Entrar
@@ -43,7 +43,7 @@ export default function LandingPage() {
             Use IA no escritório com prova de diligência — não com risco de multa.
           </h1>
           <p className="text-lg text-gray-600 mt-6 max-w-2xl mx-auto leading-relaxed">
-            JurisOS Guard é a camada de governança que valida as citações das suas peças contra
+            Vexiajuris Guard é a camada de governança que valida as citações das suas peças contra
             fontes oficiais e registra cada uso de IA numa trilha de auditoria imutável.
             Funciona por cima de qualquer IA — ChatGPT, Gemini, Jus IA.
           </p>
@@ -115,7 +115,7 @@ export default function LandingPage() {
           <div>
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Independente da IA que você usa</h2>
             <p className="text-gray-600 leading-relaxed mb-4">
-              JurisOS Guard não é mais um copiloto jurídico. É a camada de compliance do copiloto —
+              Vexiajuris Guard não é mais um copiloto jurídico. É a camada de compliance do copiloto —
               funciona por cima do ChatGPT, do Gemini, do Jus IA ou de qualquer modelo. Você não
               troca de ferramenta; você ganha controle e prova sobre o uso de todas elas.
             </p>
@@ -167,7 +167,7 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-6 py-8 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-400">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-[10px]">JG</div>
-            <span>JurisOS Guard</span>
+            <span>Vexiajuris Guard</span>
           </div>
           <p>Camada de governança e auditoria de IA jurídica. Evidência de diligência — não enquadramento estatutário.</p>
         </div>

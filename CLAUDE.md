@@ -1,4 +1,4 @@
-# CLAUDE.md — JurisOS Guard (camada de governança e auditoria de IA)
+# CLAUDE.md — Vexiajuris Guard (camada de governança e auditoria de IA)
 
 Instruções de projeto para o Claude Code. Leia este arquivo antes de qualquer tarefa.
 

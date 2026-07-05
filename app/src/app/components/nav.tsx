@@ -45,7 +45,7 @@ export function Nav() {
         </div>
         {!collapsed && (
           <div className="min-w-0">
-            <p className="font-semibold text-sm leading-tight truncate">JurisOS Guard</p>
+            <p className="font-semibold text-sm leading-tight truncate">Vexiajuris Guard</p>
             <p className="text-[10px] text-slate-400 leading-tight">Governança de IA</p>
           </div>
         )}
