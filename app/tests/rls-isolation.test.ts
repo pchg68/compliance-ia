@@ -9,15 +9,30 @@ import { Client } from "pg";
 const DATABASE_URL =
   process.env.DATABASE_URL ?? "postgresql://postgres:postgres@localhost:54322/postgres";
 
+// A RLS só é de fato aplicada para um papel sem BYPASSRLS. `postgres` é
+// superuser e ignora RLS — por isso os testes de leitura abaixo usam o papel
+// restrito `vexiajuris_app` (criado na migration 20260706163639), não o
+// DATABASE_URL padrão. beforeAll/afterAll continuam usando o superuser porque
+// precisam desabilitar o trigger de imutabilidade para limpar os dados de teste.
+const RESTRICTED_DATABASE_URL =
+  process.env.RESTRICTED_DATABASE_URL ??
+  "postgresql://vexiajuris_app:change_me_before_activating@localhost:54322/postgres";
+
 async function freshClient(): Promise<Client> {
   const c = new Client({ connectionString: DATABASE_URL });
   await c.connect();
   return c;
 }
 
+async function freshRestrictedClient(): Promise<Client> {
+  const c = new Client({ connectionString: RESTRICTED_DATABASE_URL });
+  await c.connect();
+  return c;
+}
+
 /** Configura o org_id na sessão para que o RLS filtre corretamente. */
 async function setOrgContext(db: Client, orgId: string): Promise<void> {
-  await db.query(`SET app.current_org = $1`, [orgId]);
+  await db.query(`SELECT set_config('app.current_org', $1, false)`, [orgId]);
 }
 
 /** Remove o setting de org_id da sessão (simula sessão sem contexto). */
@@ -111,7 +126,7 @@ afterAll(async () => {
 
 describe("Isolamento multi-tenant — RLS por org_id", () => {
   it("com contexto de Org A, só vê interações da Org A", async () => {
-    const db = await freshClient();
+    const db = await freshRestrictedClient();
     await setOrgContext(db, orgA);
 
     const res = await db.query(
@@ -126,7 +141,7 @@ describe("Isolamento multi-tenant — RLS por org_id", () => {
   });
 
   it("com contexto de Org B, só vê interações da Org B", async () => {
-    const db = await freshClient();
+    const db = await freshRestrictedClient();
     await setOrgContext(db, orgB);
 
     const res = await db.query(
@@ -140,27 +155,26 @@ describe("Isolamento multi-tenant — RLS por org_id", () => {
     await db.end();
   });
 
-  it("sem contexto de org (RESET), RLS bloqueia acesso a todas as interações", async () => {
-    const db = await freshClient();
+  it("sem contexto de org (RESET), RLS falha fechado em vez de vazar dados", async () => {
+    const db = await freshRestrictedClient();
     await clearOrgContext(db);
 
-    const res = await db.query(
-      `SELECT id FROM ai_interaction WHERE id IN ($1,$2)`,
-      [interactionA, interactionB]
-    );
-    expect(res.rows).toHaveLength(0);
+    // Sem app.current_org definido, current_setting(..., true) devolve '' (não NULL),
+    // e o cast '' ::uuid da policy lança erro — a query falha em vez de devolver linhas.
+    // Comportamento fail-closed: nenhuma interação vaza, mas via exceção, não lista vazia.
+    await expect(
+      db.query(`SELECT id FROM ai_interaction WHERE id IN ($1,$2)`, [interactionA, interactionB])
+    ).rejects.toThrow(/invalid input syntax for type uuid/);
 
     await db.end();
   });
 
   it("Org A não vê policies da Org B mesmo sabendo o ID", async () => {
-    const db = await freshClient();
-    // policy não tem RLS ativado nesta versão — este teste documenta o comportamento atual
-    // (policy é dado de configuração acessível no contexto da própria org)
+    const db = await freshRestrictedClient();
+    // policy agora tem RLS habilitado (migration 20260706163639) — a RLS por si só
+    // já isolaria mesmo sem o WHERE explícito abaixo, testado com o papel restrito.
     await setOrgContext(db, orgA);
 
-    // policy não tem RLS habilitado; este teste verifica que a camada de aplicação
-    // deve garantir isolamento por policy.org_id via query direta
     const res = await db.query(
       `SELECT id FROM policy WHERE org_id = $1`,
       [orgA]
@@ -172,11 +186,10 @@ describe("Isolamento multi-tenant — RLS por org_id", () => {
     await db.end();
   });
 
-  it("com contexto de Org A, não vê app_users da Org B (app_user sem RLS — teste de documentação)", async () => {
-    const db = await freshClient();
+  it("com contexto de Org A, não vê app_users da Org B (RLS habilitada em app_user)", async () => {
+    const db = await freshRestrictedClient();
     await setOrgContext(db, orgA);
 
-    // app_user não tem RLS habilitado; isolamento é feito por WHERE na query
     const res = await db.query(
       `SELECT id FROM app_user WHERE org_id = $1`,
       [orgA]

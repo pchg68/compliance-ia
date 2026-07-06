@@ -140,12 +140,26 @@ conector DATAJUD, checklist ético não seguindo a jurisdição ativa, canonical
 determinística para `citations` (jsonb aninhado), `hash_schema_version` não usado no hash, RLS
 faltando em `organization`/`app_user`/`policy`.
 
-**Ainda pendente (não ativado nesta sessão — exige banco vivo para validar com segurança):**
-- Migration `20260706163639` cria o papel restrito `vexiajuris_app` com REVOKE de
-  UPDATE/DELETE/TRUNCATE na trilha, mas `src/lib/db.ts` continua conectando como `postgres`
-  (superuser, ignora RLS e REVOKE). Ativar exige: provisionar a senha do papel via variável de
-  ambiente, trocar a connection string da aplicação, e então testar contra um banco real que
-  nenhuma query legítima dependia de privilégio de superuser.
+**Também integrado nesta sessão:** um audit paralelo (GitHub Copilot coding agent, PRs #6/#7) já
+tinha corrigido em `origin/main` a divergência de taxonomia `decision`/`risk_class` entre
+`interaction.ts` e `risk-engine.ts` (constraint + `v_dashboard_summary`), adicionado
+`current_setting('app.current_org', true)` (missing_ok) nas policies antigas, um trigger de DELETE
+em `checklist_response`, e os testes `migration-sequence.test.ts`/`rls-isolation.test.ts`. Mesclado
+sem conflitos. `rls-isolation.test.ts` tinha dois bugs corrigidos aqui: `SET app.current_org = $1`
+não é sintaxe válida com bind parameter (trocado por `SELECT set_config(...)`), e os testes
+conectavam como `postgres` (superuser, ignora RLS) — agora usam o papel `vexiajuris_app` da
+migration `20260706163639`, o que **valida de fato** que esse papel restrito funciona (RLS isola
+corretamente `ai_interaction`/`policy`/`app_user` por org; sem contexto, falha fechado com erro de
+cast em vez de vazar dados).
+
+**Ainda pendente (não ativado nesta sessão — exige decidir a estratégia de rollout antes):**
+- O papel `vexiajuris_app` (migration `20260706163639`) está validado por teste, mas
+  `src/lib/db.ts` continua conectando como `postgres` em produção/dev (superuser, ignora RLS e
+  REVOKE). Ativar exige: provisionar a senha do papel via variável de ambiente/KMS (a senha da
+  migration, `change_me_before_activating`, é só para dev local), trocar a connection string da
+  aplicação, e então rodar a suíte inteira contra um banco real que nenhuma query legítima
+  dependia de privilégio de superuser (nenhuma encontrada nesta auditoria, mas vale conferir de
+  novo no momento da troca).
 - `current_setting('app.current_org')` nunca é definido por nenhuma query — a RLS de toda tabela
   multi-tenant está descrita no schema mas inoperante em runtime. Precisa de `SET LOCAL
   app.current_org` por request/transação (checkout de conexão dedicado, não `pool.query` solto).
