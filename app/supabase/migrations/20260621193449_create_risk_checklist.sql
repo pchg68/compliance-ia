@@ -29,12 +29,17 @@ ALTER TABLE risk_assessment ENABLE ROW LEVEL SECURITY;
 ALTER TABLE checklist_response ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation_risk_assessment ON risk_assessment
-  USING (org_id = current_setting('app.current_org')::uuid);
+  USING (org_id = current_setting('app.current_org', true)::uuid);
 
 CREATE POLICY tenant_isolation_checklist_response ON checklist_response
-  USING (org_id = current_setting('app.current_org')::uuid);
+  USING (org_id = current_setting('app.current_org', true)::uuid);
 
 -- Append-only para risk_assessment (evidência de classificação não pode ser alterada)
 CREATE TRIGGER no_mutation_risk_assessment
   BEFORE UPDATE OR DELETE ON risk_assessment
+  FOR EACH ROW EXECUTE FUNCTION block_mutation();
+
+-- Checklist: bloqueia DELETE (status pode ser atualizado no fluxo de aprovação)
+CREATE TRIGGER no_delete_checklist_response
+  BEFORE DELETE ON checklist_response
   FOR EACH ROW EXECUTE FUNCTION block_mutation();

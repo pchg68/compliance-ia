@@ -58,7 +58,7 @@ CREATE TABLE ai_interaction (
   response_orig_hash bytea,
 
   policy_id          uuid NOT NULL REFERENCES policy(id),
-  decision           text NOT NULL,
+  decision           text NOT NULL CHECK (decision IN ('block','require_approval','allow_with_masking','allow')),
   pii_technique      jsonb,
   injection_flags    jsonb,
   checklist_passed   boolean NOT NULL,
@@ -98,13 +98,13 @@ ALTER TABLE token_map      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_anchor   ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation_ai_interaction ON ai_interaction
-  USING (org_id = current_setting('app.current_org')::uuid);
+  USING (org_id = current_setting('app.current_org', true)::uuid);
 
 CREATE POLICY tenant_isolation_token_map ON token_map
-  USING (org_id = current_setting('app.current_org')::uuid);
+  USING (org_id = current_setting('app.current_org', true)::uuid);
 
 CREATE POLICY tenant_isolation_audit_anchor ON audit_anchor
-  USING (org_id = current_setting('app.current_org')::uuid);
+  USING (org_id = current_setting('app.current_org', true)::uuid);
 
 -- ============================================================
 -- 5. Append-only: trigger que bloqueia UPDATE e DELETE

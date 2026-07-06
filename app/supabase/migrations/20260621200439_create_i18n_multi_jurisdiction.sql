@@ -21,7 +21,7 @@ CREATE TABLE jurisdiction_config (
 ALTER TABLE jurisdiction_config ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation_jurisdiction_config ON jurisdiction_config
-  USING (org_id = current_setting('app.current_org')::uuid);
+  USING (org_id = current_setting('app.current_org', true)::uuid);
 
 -- ============================================================
 -- 2. Tabela de traduções (labels de UI e relatórios)
