@@ -23,4 +23,4 @@ CREATE TABLE prompt_template (
 ALTER TABLE prompt_template ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation_prompt_template ON prompt_template
-  USING (org_id = current_setting('app.current_org')::uuid);
+  USING (org_id = current_setting('app.current_org', true)::uuid);

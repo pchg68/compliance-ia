@@ -29,7 +29,7 @@ CREATE TABLE source_cache (
 ALTER TABLE citation_check ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation_citation_check ON citation_check
-  USING (org_id = current_setting('app.current_org')::uuid);
+  USING (org_id = current_setting('app.current_org', true)::uuid);
 
 CREATE TRIGGER no_mutation_citation_check
   BEFORE UPDATE OR DELETE ON citation_check
@@ -56,7 +56,7 @@ CREATE TABLE proxy_request (
 ALTER TABLE proxy_request ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation_proxy_request ON proxy_request
-  USING (org_id = current_setting('app.current_org')::uuid);
+  USING (org_id = current_setting('app.current_org', true)::uuid);
 
 CREATE TRIGGER no_mutation_proxy_request
   BEFORE UPDATE OR DELETE ON proxy_request
@@ -71,9 +71,9 @@ SELECT
   org_id,
   COUNT(*)::int AS total_interactions,
   COUNT(*) FILTER (WHERE decision = 'block')::int AS blocked,
-  COUNT(*) FILTER (WHERE decision = 'approval')::int AS pending_approval,
+  COUNT(*) FILTER (WHERE decision = 'require_approval')::int AS pending_approval,
   COUNT(*) FILTER (WHERE decision = 'allow')::int AS allowed,
-  COUNT(*) FILTER (WHERE decision = 'masked')::int AS masked,
+  COUNT(*) FILTER (WHERE decision = 'allow_with_masking')::int AS masked,
   COUNT(*) FILTER (WHERE risk_class = 'excessivo')::int AS risk_excessive,
   COUNT(*) FILTER (WHERE risk_class = 'alto')::int AS risk_high,
   COUNT(*) FILTER (WHERE risk_class = 'moderado')::int AS risk_moderate,

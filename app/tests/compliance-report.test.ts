@@ -31,8 +31,8 @@ beforeAll(async () => {
   // Insert 3 interactions with different risk/decision
   const interactions = [
     { seq: 1, risk: "baixo", decision: "allow", task: "pesquisa", passed: true },
-    { seq: 2, risk: "alto", decision: "approval", task: "peca", passed: true },
-    { seq: 3, risk: "moderado", decision: "masked", task: "contrato", passed: false },
+    { seq: 2, risk: "alto", decision: "require_approval", task: "peca", passed: true },
+    { seq: 3, risk: "moderado", decision: "allow_with_masking", task: "contrato", passed: false },
   ];
 
   for (const i of interactions) {
