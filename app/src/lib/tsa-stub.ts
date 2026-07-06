@@ -1,4 +1,4 @@
-import { createHash, createHmac } from "crypto";
+import { createHmac } from "crypto";
 
 // Stub de carimbo de tempo ICP-Brasil (RFC 3161).
 // Em produção, substituir por chamada real a uma TSA ICP-Brasil credenciada.
