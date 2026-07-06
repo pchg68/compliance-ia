@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { publicProcedure, router } from "../trpc/init";
+import { publicProcedure, adminProcedure, router } from "../trpc/init";
 import { pool } from "@/lib/db";
 import { getJurisdiction, listJurisdictions } from "@/lib/jurisdiction";
 
@@ -49,15 +49,15 @@ export const jurisdictionRouter = router({
       return profile.decision_table;
     }),
 
-  configure: publicProcedure
+  configure: adminProcedure
     .input(
       z.object({
-        org_id: z.string().guid(),
         jurisdiction: z.string(),
         active: z.boolean().default(true),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      const orgId = ctx.orgId;
       const profile = getJurisdiction(input.jurisdiction);
 
       await pool.query(
@@ -65,7 +65,7 @@ export const jurisdictionRouter = router({
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (org_id, jurisdiction) DO UPDATE SET active = $7, label = $3`,
         [
-          input.org_id, profile.code, profile.label, profile.locale,
+          orgId, profile.code, profile.label, profile.locale,
           JSON.stringify(profile.regulatory_refs),
           JSON.stringify(profile.risk_levels),
           input.active,
@@ -75,7 +75,7 @@ export const jurisdictionRouter = router({
       // Criar/atualizar a policy com a decision_table da jurisdição
       const existingPolicy = await pool.query(
         `SELECT id, version FROM policy WHERE org_id = $1 AND jurisdiction = $2 ORDER BY version DESC LIMIT 1`,
-        [input.org_id, profile.code]
+        [orgId, profile.code]
       );
 
       const nextVersion = existingPolicy.rows.length > 0
@@ -85,14 +85,14 @@ export const jurisdictionRouter = router({
       // Desativar policies anteriores desta jurisdição
       await pool.query(
         `UPDATE policy SET active = false WHERE org_id = $1 AND jurisdiction = $2`,
-        [input.org_id, profile.code]
+        [orgId, profile.code]
       );
 
       await pool.query(
         `INSERT INTO policy (org_id, version, jurisdiction, rules, active)
          VALUES ($1, $2, $3, $4, true)`,
         [
-          input.org_id, nextVersion, profile.code,
+          orgId, nextVersion, profile.code,
           JSON.stringify({ decision_table: profile.decision_table }),
         ]
       );
@@ -100,7 +100,7 @@ export const jurisdictionRouter = router({
       if (input.active) {
         await pool.query(
           `UPDATE organization SET default_jurisdiction = $1 WHERE id = $2`,
-          [profile.code, input.org_id]
+          [profile.code, orgId]
         );
       }
 

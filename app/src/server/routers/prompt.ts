@@ -1,12 +1,11 @@
 import { z } from "zod/v4";
-import { publicProcedure, router } from "../trpc/init";
+import { protectedProcedure, router } from "../trpc/init";
 import { pool } from "@/lib/db";
 
 export const promptRouter = router({
-  create: publicProcedure
+  create: protectedProcedure
     .input(
       z.object({
-        org_id: z.string().guid(),
         title: z.string().min(1),
         description: z.string().nullable().optional(),
         category: z.string().min(1),
@@ -14,35 +13,34 @@ export const promptRouter = router({
         risk_class: z.enum(["excessivo", "alto", "moderado", "baixo"]),
         template_text: z.string().min(1),
         variables: z.array(z.object({ name: z.string(), description: z.string().optional() })).default([]),
-        approved_by: z.string().guid().nullable().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const result = await pool.query(
         `INSERT INTO prompt_template (org_id, title, description, category, task_type, risk_class, template_text, variables, approved_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING id, version`,
         [
-          input.org_id, input.title, input.description ?? null,
+          ctx.orgId, input.title, input.description ?? null,
           input.category, input.task_type, input.risk_class,
           input.template_text, JSON.stringify(input.variables),
-          input.approved_by ?? null,
+          ctx.userId,
         ]
       );
       return result.rows[0];
     }),
 
-  list: publicProcedure
+  list: protectedProcedure
     .input(
       z.object({
-        org_id: z.string().guid(),
+        org_id: z.string().guid().optional(),
         category: z.string().optional(),
         active_only: z.boolean().default(true),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const conditions = ["org_id = $1"];
-      const params: unknown[] = [input.org_id];
+      const params: unknown[] = [ctx.orgId];
 
       if (input.active_only) {
         conditions.push("active = true");
@@ -62,27 +60,27 @@ export const promptRouter = router({
       return result.rows;
     }),
 
-  get: publicProcedure
+  get: protectedProcedure
     .input(z.object({ id: z.string().guid() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const result = await pool.query(
-        `SELECT * FROM prompt_template WHERE id = $1`,
-        [input.id]
+        `SELECT * FROM prompt_template WHERE id = $1 AND org_id = $2`,
+        [input.id, ctx.orgId]
       );
       return result.rows[0] ?? null;
     }),
 
-  render: publicProcedure
+  render: protectedProcedure
     .input(
       z.object({
         template_id: z.string().guid(),
         values: z.record(z.string(), z.string()),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const result = await pool.query(
-        `SELECT template_text, variables, task_type, risk_class FROM prompt_template WHERE id = $1 AND active = true`,
-        [input.template_id]
+        `SELECT template_text, variables, task_type, risk_class FROM prompt_template WHERE id = $1 AND org_id = $2 AND active = true`,
+        [input.template_id, ctx.orgId]
       );
       if (!result.rows[0]) throw new Error("Template não encontrado ou inativo");
 
@@ -100,12 +98,12 @@ export const promptRouter = router({
       };
     }),
 
-  deactivate: publicProcedure
+  deactivate: protectedProcedure
     .input(z.object({ id: z.string().guid() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       await pool.query(
-        `UPDATE prompt_template SET active = false, updated_at = now() WHERE id = $1`,
-        [input.id]
+        `UPDATE prompt_template SET active = false, updated_at = now() WHERE id = $1 AND org_id = $2`,
+        [input.id, ctx.orgId]
       );
       return { deactivated: true };
     }),

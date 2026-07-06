@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { Nav, PageWrapper } from "../components/nav";
 import { trpc } from "@/lib/trpc-client";
-import { useOrgId } from "@/lib/auth-context";
+import { useAuth, useOrgId } from "@/lib/auth-context";
+
+const ADMIN_ROLES = ["admin", "compliance", "developer"];
 
 function isoStart(d: string) {
   return new Date(`${d}T00:00:00`).toISOString();
@@ -49,6 +51,8 @@ function BreakdownTable({ title, rows, keyName }: {
 
 export default function RelatoriosPage() {
   const orgId = useOrgId();
+  const { me } = useAuth();
+  const isAdmin = ADMIN_ROLES.includes(me?.role ?? "");
   const today = new Date();
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
   const [start, setStart] = useState(firstOfMonth.toISOString().slice(0, 10));
@@ -72,6 +76,25 @@ export default function RelatoriosPage() {
     summary && summary.total_interactions > 0
       ? Math.round((summary.checklist_passed / summary.total_interactions) * 100)
       : null;
+
+  if (!isAdmin) {
+    return (
+      <>
+        <Nav />
+        <PageWrapper>
+          <div className="min-h-screen flex items-center justify-center px-8">
+            <div className="bg-white rounded-xl border border-gray-100 p-10 text-center shadow-sm max-w-md">
+              <h2 className="font-semibold text-gray-900 mb-2">Acesso restrito</h2>
+              <p className="text-sm text-gray-500">
+                O relatório de conformidade é visível apenas para perfis administrativos
+                (admin, compliance ou desenvolvedor).
+              </p>
+            </div>
+          </div>
+        </PageWrapper>
+      </>
+    );
+  }
 
   return (
     <>

@@ -1,18 +1,19 @@
 import { z } from "zod/v4";
-import { publicProcedure, router } from "../trpc/init";
+import { adminProcedure, router } from "../trpc/init";
 import { pool } from "@/lib/db";
 
 export const reportRouter = router({
-  compliance: publicProcedure
+  compliance: adminProcedure
     .input(
       z.object({
-        org_id: z.string().guid(),
+        org_id: z.string().guid().optional(),
         period_start: z.string().datetime(),
         period_end: z.string().datetime(),
       })
     )
-    .query(async ({ input }) => {
-      const { org_id, period_start, period_end } = input;
+    .query(async ({ ctx, input }) => {
+      const org_id = ctx.orgId;
+      const { period_start, period_end } = input;
 
       const [summary, byRisk, byDecision, byTaskType, byUser, chainStatus] =
         await Promise.all([

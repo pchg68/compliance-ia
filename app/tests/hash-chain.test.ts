@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Client } from "pg";
-import { computeRowHash, computeContentHash, type HashableInteraction } from "../src/lib/hash";
+import {
+  computeRowHash,
+  computeContentHash,
+  CURRENT_HASH_SCHEMA_VERSION,
+  type HashableInteraction,
+} from "../src/lib/hash";
 
 const DATABASE_URL =
   process.env.DATABASE_URL ?? "postgresql://postgres:postgres@localhost:54322/postgres";
@@ -62,6 +67,7 @@ async function insertInteraction(seq: number, prevHash: Buffer | null) {
     checklist_passed: true,
     citations: null,
     created_at: now,
+    hash_schema_version: CURRENT_HASH_SCHEMA_VERSION,
   };
 
   const rowHash = computeRowHash(hashable, prevHash);
@@ -70,17 +76,17 @@ async function insertInteraction(seq: number, prevHash: Buffer | null) {
     `INSERT INTO ai_interaction (
       org_id, seq, user_id, provider, model, task_type, risk_class,
       prompt_masked, response_masked, prompt_orig_hash, response_orig_hash,
-      policy_id, decision, checklist_passed, prev_hash, row_hash, created_at
+      policy_id, decision, checklist_passed, prev_hash, row_hash, created_at, hash_schema_version
     ) VALUES (
       $1, $2, $3, 'anthropic', 'claude-sonnet-4-6', 'pesquisa', 'baixo',
       $4, $5, $6, NULL,
-      $7, 'allow', true, $8, $9, $10
+      $7, 'allow', true, $8, $9, $10, $11
     ) RETURNING id`,
     [
       orgId, seq, userId,
       hashable.prompt_masked, hashable.response_masked,
       promptOrigHash, policyId,
-      prevHash, rowHash, now,
+      prevHash, rowHash, now, CURRENT_HASH_SCHEMA_VERSION,
     ]
   );
 
@@ -109,7 +115,7 @@ describe("Cadeia de hash — integridade", () => {
               encode(prompt_orig_hash, 'hex') as prompt_orig_hash,
               encode(response_orig_hash, 'hex') as response_orig_hash,
               decision, checklist_passed, citations, created_at,
-              prev_hash, row_hash
+              prev_hash, row_hash, hash_schema_version
        FROM ai_interaction WHERE org_id = $1 ORDER BY seq ASC`,
       [orgId]
     );
@@ -136,6 +142,7 @@ describe("Cadeia de hash — integridade", () => {
         created_at: row.created_at instanceof Date
           ? row.created_at.toISOString()
           : row.created_at,
+        hash_schema_version: row.hash_schema_version,
       };
 
       const expected = computeRowHash(hashable, prevHash);
@@ -160,6 +167,7 @@ describe("Cadeia de hash — integridade", () => {
       checklist_passed: true,
       citations: null,
       created_at: "2026-06-21T00:00:00.000Z",
+      hash_schema_version: CURRENT_HASH_SCHEMA_VERSION,
     };
 
     const hash1 = computeRowHash(data, null);
@@ -184,6 +192,7 @@ describe("Cadeia de hash — integridade", () => {
       checklist_passed: true,
       citations: null,
       created_at: "2026-06-21T00:00:00.000Z",
+      hash_schema_version: CURRENT_HASH_SCHEMA_VERSION,
     };
 
     const original = computeRowHash(base, null);
@@ -191,3 +200,6 @@ describe("Cadeia de hash — integridade", () => {
     expect(original.equals(tampered)).toBe(false);
   });
 });
+
+// Ver também tests/hash-canonical.test.ts para testes puros de canonicalização
+// (determinismo de 'citations' jsonb aninhado) que não exigem banco de dados.

@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { Nav, PageWrapper } from "../components/nav";
 import { trpc } from "@/lib/trpc-client";
+import { useAuth } from "@/lib/auth-context";
+
+const ADMIN_ROLES = ["admin", "compliance", "developer"];
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Administrador",
@@ -19,6 +22,8 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 export default function EquipePage() {
+  const { me } = useAuth();
+  const isAdmin = ADMIN_ROLES.includes(me?.role ?? "");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"member" | "admin" | "compliance" | "developer">("member");
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +53,8 @@ export default function EquipePage() {
         </header>
 
         <main className="px-8 py-6 space-y-6">
-          {/* Convidar usuário */}
+          {/* Convidar usuário — restrito a admin/compliance/developer */}
+          {isAdmin && (
           <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm">
             <h2 className="font-semibold text-gray-900 mb-4">Adicionar membro</h2>
             <div className="flex gap-3">
@@ -83,6 +89,7 @@ export default function EquipePage() {
               O usuário receberá acesso ao painel ao fazer login com este e-mail.
             </p>
           </div>
+          )}
 
           {/* Lista de usuários */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -110,16 +117,22 @@ export default function EquipePage() {
                         Desde {new Date(u.created_at).toLocaleDateString("pt-BR")}
                       </p>
                     </div>
-                    <select
-                      value={u.role}
-                      onChange={(e) => updateRole.mutate({ user_id: u.id, role: e.target.value as "member" | "admin" | "compliance" | "developer" })}
-                      className={`text-xs font-semibold px-2.5 py-1 rounded-full border-0 cursor-pointer ${ROLE_COLORS[u.role] ?? "bg-gray-100 text-gray-600"}`}
-                    >
-                      <option value="member">Membro</option>
-                      <option value="compliance">Compliance</option>
-                      <option value="admin">Administrador</option>
-                      <option value="developer">Desenvolvedor</option>
-                    </select>
+                    {isAdmin ? (
+                      <select
+                        value={u.role}
+                        onChange={(e) => updateRole.mutate({ user_id: u.id, role: e.target.value as "member" | "admin" | "compliance" | "developer" })}
+                        className={`text-xs font-semibold px-2.5 py-1 rounded-full border-0 cursor-pointer ${ROLE_COLORS[u.role] ?? "bg-gray-100 text-gray-600"}`}
+                      >
+                        <option value="member">Membro</option>
+                        <option value="compliance">Compliance</option>
+                        <option value="admin">Administrador</option>
+                        <option value="developer">Desenvolvedor</option>
+                      </select>
+                    ) : (
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${ROLE_COLORS[u.role] ?? "bg-gray-100 text-gray-600"}`}>
+                        {ROLE_LABELS[u.role] ?? u.role}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>

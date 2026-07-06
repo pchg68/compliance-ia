@@ -1,5 +1,7 @@
 import { createHash } from "crypto";
 
+export const CURRENT_HASH_SCHEMA_VERSION = 1;
+
 export interface HashableInteraction {
   org_id: string;
   seq: number;
@@ -16,6 +18,7 @@ export interface HashableInteraction {
   checklist_passed: boolean;
   citations: unknown | null;
   created_at: string;
+  hash_schema_version: number;
 }
 
 const HASH_FIELDS: (keyof HashableInteraction)[] = [
@@ -34,12 +37,33 @@ const HASH_FIELDS: (keyof HashableInteraction)[] = [
   "checklist_passed",
   "citations",
   "created_at",
+  "hash_schema_version",
 ];
+
+/**
+ * Ordena recursivamente as chaves de qualquer objeto/array aninhado.
+ * Necessário porque `citations` é jsonb arbitrário: sem isso, a ordem das
+ * chaves devolvida pelo driver pg não é garantida como a de inserção,
+ * quebrando o determinismo exigido pelo hash canônico.
+ */
+function sortKeysDeep(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortKeysDeep);
+  }
+  if (value !== null && typeof value === "object") {
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+      sorted[key] = sortKeysDeep((value as Record<string, unknown>)[key]);
+    }
+    return sorted;
+  }
+  return value;
+}
 
 export function canonicalSerialize(data: HashableInteraction): string {
   const obj: Record<string, unknown> = {};
   for (const key of HASH_FIELDS) {
-    obj[key] = data[key] ?? null;
+    obj[key] = sortKeysDeep(data[key] ?? null);
   }
   return JSON.stringify(obj);
 }

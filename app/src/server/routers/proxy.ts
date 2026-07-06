@@ -1,16 +1,14 @@
 import { z } from "zod/v4";
-import { publicProcedure, router } from "../trpc/init";
+import { protectedProcedure, router } from "../trpc/init";
 import { pool } from "@/lib/db";
 import { maskPii } from "@/lib/pii-masker";
 import { classifyRisk, type RiskSignals, type DecisionRule } from "@/lib/risk-engine";
 import { evaluateAlerts } from "@/lib/alert-rules";
 
 export const proxyRouter = router({
-  forward: publicProcedure
+  forward: protectedProcedure
     .input(
       z.object({
-        org_id: z.string().guid(),
-        user_id: z.string().guid(),
         provider: z.string(),
         model: z.string(),
         prompt: z.string(),
@@ -25,7 +23,8 @@ export const proxyRouter = router({
         }),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      const orgId = ctx.orgId;
       const startTime = Date.now();
 
       // 1. Mascarar PII
@@ -34,7 +33,7 @@ export const proxyRouter = router({
       // 2. Classificar risco
       const policyResult = await pool.query(
         `SELECT rules FROM policy WHERE org_id = $1 AND active = true ORDER BY version DESC LIMIT 1`,
-        [input.org_id]
+        [orgId]
       );
       const decisionTable: DecisionRule[] =
         policyResult.rows.length > 0
@@ -53,7 +52,7 @@ export const proxyRouter = router({
         await pool.query(
           `INSERT INTO proxy_request (org_id, provider, endpoint, status_code, latency_ms, fail_mode)
            VALUES ($1, $2, $3, 403, $4, 'fail_closed')`,
-          [input.org_id, input.provider, `/v1/messages`, Date.now() - startTime]
+          [orgId, input.provider, `/v1/messages`, Date.now() - startTime]
         );
 
         // Gerar alertas
@@ -62,7 +61,7 @@ export const proxyRouter = router({
           await pool.query(
             `INSERT INTO alert (org_id, severity, category, title, description)
              VALUES ($1, $2, $3, $4, $5)`,
-            [input.org_id, alert.severity, alert.category, alert.title, alert.description]
+            [orgId, alert.severity, alert.category, alert.title, alert.description]
           );
         }
 
@@ -82,7 +81,7 @@ export const proxyRouter = router({
       await pool.query(
         `INSERT INTO proxy_request (org_id, provider, endpoint, status_code, latency_ms, streaming, fail_mode)
          VALUES ($1, $2, $3, 200, $4, false, 'fail_closed')`,
-        [input.org_id, input.provider, `/v1/messages`, latencyMs]
+        [orgId, input.provider, `/v1/messages`, latencyMs]
       );
 
       // Gerar alertas se necessário
@@ -91,7 +90,7 @@ export const proxyRouter = router({
         await pool.query(
           `INSERT INTO alert (org_id, severity, category, title, description)
            VALUES ($1, $2, $3, $4, $5)`,
-          [input.org_id, alert.severity, alert.category, alert.title, alert.description]
+          [orgId, alert.severity, alert.category, alert.title, alert.description]
         );
       }
 
@@ -108,18 +107,17 @@ export const proxyRouter = router({
       };
     }),
 
-  listRequests: publicProcedure
+  listRequests: protectedProcedure
     .input(
       z.object({
-        org_id: z.string().guid(),
         limit: z.number().int().max(100).default(50),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const result = await pool.query(
         `SELECT id, provider, endpoint, status_code, latency_ms, streaming, fail_mode, created_at
          FROM proxy_request WHERE org_id = $1 ORDER BY created_at DESC LIMIT $2`,
-        [input.org_id, input.limit]
+        [ctx.orgId, input.limit]
       );
       return result.rows;
     }),

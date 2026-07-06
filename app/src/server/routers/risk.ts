@@ -1,14 +1,14 @@
 import { z } from "zod/v4";
-import { publicProcedure, router } from "../trpc/init";
+import { protectedProcedure, adminProcedure, router } from "../trpc/init";
 import { pool } from "@/lib/db";
 import { classifyRisk, type RiskSignals, type DecisionRule } from "@/lib/risk-engine";
 import { getChecklistItems } from "@/lib/checklist";
+import { getJurisdiction } from "@/lib/jurisdiction";
 
 export const riskRouter = router({
-  assess: publicProcedure
+  assess: protectedProcedure
     .input(
       z.object({
-        org_id: z.string().guid(),
         interaction_id: z.string().guid(),
         signals: z.object({
           task_type: z.string(),
@@ -21,10 +21,11 @@ export const riskRouter = router({
         }),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      const orgId = ctx.orgId;
       const policyResult = await pool.query(
-        `SELECT rules FROM policy WHERE org_id = $1 AND active = true ORDER BY version DESC LIMIT 1`,
-        [input.org_id]
+        `SELECT rules, jurisdiction FROM policy WHERE org_id = $1 AND active = true ORDER BY version DESC LIMIT 1`,
+        [orgId]
       );
 
       const decisionTable: DecisionRule[] =
@@ -33,14 +34,23 @@ export const riskRouter = router({
           : [];
 
       const result = classifyRisk(input.signals as RiskSignals, decisionTable);
-      const checklistItems = getChecklistItems(result.tier);
+
+      // Checklist ético deve seguir a jurisdição ativa da política, não um default fixo BR.
+      const jurisdictionCode = policyResult.rows[0]?.jurisdiction as string | undefined;
+      const checklistItems = jurisdictionCode
+        ? (result.tier === "alto"
+            ? getJurisdiction(jurisdictionCode).checklist_alto
+            : result.tier === "moderado"
+              ? getJurisdiction(jurisdictionCode).checklist_moderado
+              : [])
+        : getChecklistItems(result.tier);
 
       await pool.query(
         `INSERT INTO risk_assessment (interaction_id, org_id, signals, tier, matched_rule, decision, controls_applied, computed_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
           input.interaction_id,
-          input.org_id,
+          orgId,
           JSON.stringify(input.signals),
           result.tier,
           result.matched_rule,
@@ -53,10 +63,9 @@ export const riskRouter = router({
       return { ...result, checklist_items: checklistItems };
     }),
 
-  submitChecklist: publicProcedure
+  submitChecklist: protectedProcedure
     .input(
       z.object({
-        org_id: z.string().guid(),
         interaction_id: z.string().guid(),
         items: z.array(
           z.object({
@@ -66,43 +75,39 @@ export const riskRouter = router({
             automatico: z.boolean(),
           })
         ),
-        attested_by: z.string().guid(),
-        approver_id: z.string().guid().nullable().optional(),
+        needs_approval: z.boolean().default(false),
       })
     )
-    .mutation(async ({ input }) => {
-      const needsApproval = input.approver_id != null;
-
+    .mutation(async ({ ctx, input }) => {
       const result = await pool.query(
         `INSERT INTO checklist_response (interaction_id, org_id, items, attested_by, approver_id, approval_status)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
         [
           input.interaction_id,
-          input.org_id,
+          ctx.orgId,
           JSON.stringify(input.items),
-          input.attested_by,
-          input.approver_id,
-          needsApproval ? "pendente" : "aprovado",
+          ctx.userId,
+          null,
+          input.needs_approval ? "pendente" : "aprovado",
         ]
       );
 
-      return { id: result.rows[0].id, approval_status: needsApproval ? "pendente" : "aprovado" };
+      return { id: result.rows[0].id, approval_status: input.needs_approval ? "pendente" : "aprovado" };
     }),
 
-  approveChecklist: publicProcedure
+  approveChecklist: adminProcedure
     .input(
       z.object({
         checklist_id: z.string().guid(),
-        approver_id: z.string().guid(),
         status: z.enum(["aprovado", "bloqueado", "ressalva"]),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       await pool.query(
         `UPDATE checklist_response SET approval_status = $1, approver_id = $2, decided_at = now()
-         WHERE id = $3 AND approval_status = 'pendente'`,
-        [input.status, input.approver_id, input.checklist_id]
+         WHERE id = $3 AND approval_status = 'pendente' AND org_id = $4`,
+        [input.status, ctx.userId, input.checklist_id, ctx.orgId]
       );
 
       return { status: input.status };

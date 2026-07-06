@@ -1,11 +1,16 @@
 import { z } from "zod/v4";
-import { publicProcedure, router } from "../trpc/init";
+import { TRPCError } from "@trpc/server";
+import { protectedProcedure, router } from "../trpc/init";
 import { pool } from "@/lib/db";
-import { computeRowHash, computeContentHash, type HashableInteraction } from "@/lib/hash";
+import {
+  computeRowHash,
+  computeContentHash,
+  CURRENT_HASH_SCHEMA_VERSION,
+  type HashableInteraction,
+} from "@/lib/hash";
+import { maskPii } from "@/lib/pii-masker";
 
 const captureInput = z.object({
-  org_id: z.string().guid(),
-  user_id: z.string().guid(),
   provider: z.string(),
   model: z.string(),
   task_type: z.string(),
@@ -25,13 +30,29 @@ const captureInput = z.object({
 });
 
 export const interactionRouter = router({
-  capture: publicProcedure.input(captureInput).mutation(async ({ input }) => {
+  capture: protectedProcedure.input(captureInput).mutation(async ({ ctx, input }) => {
+    // Fail-closed: o "masked" que chega ao núcleo não pode conter PII detectável.
+    // O mascaramento é responsabilidade da borda; aqui apenas verificamos o resultado.
+    if (maskPii(input.prompt_masked).matches.length > 0) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "prompt_masked contém PII não mascarado.",
+      });
+    }
+    if (input.response_masked && maskPii(input.response_masked).matches.length > 0) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "response_masked contém PII não mascarado.",
+      });
+    }
+
+    const orgId = ctx.orgId;
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
 
       // Advisory lock por org para serializar a cadeia de hash
-      const lockKey = Buffer.from(input.org_id.replace(/-/g, ""), "hex");
+      const lockKey = Buffer.from(orgId.replace(/-/g, ""), "hex");
       const lockId = lockKey.readInt32BE(0);
       await client.query("SELECT pg_advisory_xact_lock($1)", [lockId]);
 
@@ -39,14 +60,14 @@ export const interactionRouter = router({
       const lastRow = await client.query(
         `SELECT seq, row_hash FROM ai_interaction
          WHERE org_id = $1 ORDER BY seq DESC LIMIT 1`,
-        [input.org_id]
+        [orgId]
       );
 
       const seq = lastRow.rows.length > 0 ? Number(lastRow.rows[0].seq) + 1 : 1;
       const prevHash: Buffer | null =
         lastRow.rows.length > 0 ? lastRow.rows[0].row_hash : null;
 
-      const salt = input.org_id;
+      const salt = orgId;
       const promptOrigHash = computeContentHash(input.prompt_original, salt);
       const responseOrigHash = input.response_original
         ? computeContentHash(input.response_original, salt)
@@ -55,9 +76,9 @@ export const interactionRouter = router({
       const now = new Date().toISOString();
 
       const hashable: HashableInteraction = {
-        org_id: input.org_id,
+        org_id: orgId,
         seq,
-        user_id: input.user_id,
+        user_id: ctx.userId,
         provider: input.provider,
         model: input.model,
         task_type: input.task_type,
@@ -70,6 +91,7 @@ export const interactionRouter = router({
         checklist_passed: input.checklist_passed,
         citations: input.citations ?? null,
         created_at: now,
+        hash_schema_version: CURRENT_HASH_SCHEMA_VERSION,
       };
 
       const rowHash = computeRowHash(hashable, prevHash);
@@ -79,15 +101,15 @@ export const interactionRouter = router({
           org_id, seq, user_id, provider, model, task_type, risk_class,
           prompt_masked, response_masked, prompt_orig_hash, response_orig_hash,
           policy_id, decision, pii_technique, injection_flags,
-          checklist_passed, citations, prev_hash, row_hash, created_at
+          checklist_passed, citations, prev_hash, row_hash, created_at, hash_schema_version
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7,
           $8, $9, $10, $11,
           $12, $13, $14, $15,
-          $16, $17, $18, $19, $20
+          $16, $17, $18, $19, $20, $21
         ) RETURNING id`,
         [
-          input.org_id, seq, input.user_id, input.provider, input.model,
+          orgId, seq, ctx.userId, input.provider, input.model,
           input.task_type, input.risk_class,
           input.prompt_masked, input.response_masked,
           promptOrigHash, responseOrigHash,
@@ -96,7 +118,7 @@ export const interactionRouter = router({
           input.injection_flags ? JSON.stringify(input.injection_flags) : null,
           input.checklist_passed,
           input.citations ? JSON.stringify(input.citations) : null,
-          prevHash, rowHash, now,
+          prevHash, rowHash, now, CURRENT_HASH_SCHEMA_VERSION,
         ]
       );
 
@@ -108,7 +130,7 @@ export const interactionRouter = router({
            VALUES ($1, $2, $3, $4)`,
           [
             interactionId,
-            input.org_id,
+            orgId,
             Buffer.from(input.token_map_ciphertext, "base64"),
             Buffer.from(input.token_map_wrapped_key, "base64"),
           ]
@@ -126,9 +148,9 @@ export const interactionRouter = router({
     }
   }),
 
-  list: publicProcedure
-    .input(z.object({ org_id: z.string().guid(), limit: z.number().int().max(100).default(50) }))
-    .query(async ({ input }) => {
+  list: protectedProcedure
+    .input(z.object({ org_id: z.string().guid().optional(), limit: z.number().int().max(100).default(50) }))
+    .query(async ({ ctx, input }) => {
       const result = await pool.query(
         `SELECT id, seq, user_id, provider, model, task_type, risk_class,
                 decision, checklist_passed, created_at
@@ -136,25 +158,25 @@ export const interactionRouter = router({
          WHERE org_id = $1
          ORDER BY seq DESC
          LIMIT $2`,
-        [input.org_id, input.limit]
+        [ctx.orgId, input.limit]
       );
       return result.rows;
     }),
 
-  verifyChain: publicProcedure
-    .input(z.object({ org_id: z.string().guid() }))
-    .query(async ({ input }) => {
+  verifyChain: protectedProcedure
+    .input(z.object({ org_id: z.string().guid().optional() }).optional())
+    .query(async ({ ctx }) => {
       const result = await pool.query(
         `SELECT seq, org_id, user_id, provider, model, task_type, risk_class,
                 prompt_masked, response_masked,
                 encode(prompt_orig_hash, 'hex') as prompt_orig_hash,
                 encode(response_orig_hash, 'hex') as response_orig_hash,
                 decision, checklist_passed, citations, created_at,
-                prev_hash, row_hash
+                prev_hash, row_hash, hash_schema_version
          FROM ai_interaction
          WHERE org_id = $1
          ORDER BY seq ASC`,
-        [input.org_id]
+        [ctx.orgId]
       );
 
       if (result.rows.length === 0) {
@@ -166,6 +188,14 @@ export const interactionRouter = router({
       for (let i = 0; i < result.rows.length; i++) {
         const row = result.rows[i];
         const prevHash: Buffer | null = i > 0 ? result.rows[i - 1].row_hash : null;
+
+        if (row.hash_schema_version !== CURRENT_HASH_SCHEMA_VERSION) {
+          errors.push({
+            seq: Number(row.seq),
+            reason: `hash_schema_version ${row.hash_schema_version} não suportado por esta função de verificação`,
+          });
+          continue;
+        }
 
         const hashable: HashableInteraction = {
           org_id: row.org_id,
@@ -186,6 +216,7 @@ export const interactionRouter = router({
             row.created_at instanceof Date
               ? row.created_at.toISOString()
               : row.created_at,
+          hash_schema_version: row.hash_schema_version,
         };
 
         const expected = computeRowHash(hashable, prevHash);

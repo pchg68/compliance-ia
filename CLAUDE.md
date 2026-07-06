@@ -128,6 +128,48 @@ npx supabase stop
 
 ---
 
+## Débito técnico conhecido (auditoria 2026-07-06)
+
+Auditoria completa contra os 7 invariantes + os 3 desenhos técnicos, validada com Supabase local
+rodando (todas as migrations aplicam limpo, 134/134 testes passam) e com teste manual no navegador
+(signup, criação de escritório, dashboard, RBAC em `/equipe`). Corrigido nesta sessão:
+RBAC ausente em quase todos os routers tRPC (org_id vinha do cliente, sem checar sessão),
+escalação de privilégio em `onboarding`/`jurisdiction`, mascaramento de PII não verificado no
+servidor em `interaction.capture`, chave DATAJUD hardcoded, heurística errada de `revoked` no
+conector DATAJUD, checklist ético não seguindo a jurisdição ativa, canonicalização de hash não
+determinística para `citations` (jsonb aninhado), `hash_schema_version` não usado no hash, RLS
+faltando em `organization`/`app_user`/`policy`.
+
+**Ainda pendente (não ativado nesta sessão — exige banco vivo para validar com segurança):**
+- Migration `20260706163639` cria o papel restrito `vexiajuris_app` com REVOKE de
+  UPDATE/DELETE/TRUNCATE na trilha, mas `src/lib/db.ts` continua conectando como `postgres`
+  (superuser, ignora RLS e REVOKE). Ativar exige: provisionar a senha do papel via variável de
+  ambiente, trocar a connection string da aplicação, e então testar contra um banco real que
+  nenhuma query legítima dependia de privilégio de superuser.
+- `current_setting('app.current_org')` nunca é definido por nenhuma query — a RLS de toda tabela
+  multi-tenant está descrita no schema mas inoperante em runtime. Precisa de `SET LOCAL
+  app.current_org` por request/transação (checkout de conexão dedicado, não `pool.query` solto).
+  Até lá, o isolamento multi-tenant real depende só da camada de aplicação (ctx.orgId nos
+  routers), que foi corrigida nesta auditoria.
+- `src/middleware.ts` foi **removido** nesta sessão: ele checava um cookie `sb-*-auth-token` que o
+  `@supabase/supabase-js` nunca cria (a sessão fica em `localStorage` por padrão) — na prática, o
+  middleware redirecionava QUALQUER rota além de `/` de volta para `/`, quebrando a navegação para
+  usuários logados (bug descoberto testando no navegador, não só de leitura de código). O gate real
+  de autenticação já é o `AuthGuard` (client) + `protectedProcedure`/`adminProcedure` (servidor). Se
+  no futuro quiser um gate de middleware de verdade, migrar para `@supabase/ssr` com sessão em
+  cookie httpOnly — aí sim o middleware consegue validar antes de renderizar.
+- Mascaramento de PII: só cobre padrões estruturados (CPF/CNPJ/email/telefone/CEP/OAB/processo/RG).
+  Nomes próprios e endereços em texto livre não são mascarados — falta NER PT-BR (Fase 2, já
+  prevista no desenho técnico).
+- Validador de citações: eixo de conteúdo (juiz semântico comparando tese vs. ementa) ainda não
+  existe — qualquer citação com conteúdo não vazio é considerada `confirmada` sem checar se a
+  tese bate. É a lacuna funcional mais importante frente ao desenho técnico (Fase 3).
+- Cifragem real do `token_map` (envelope encryption via KMS) ainda não existe — o campo
+  `ciphertext` é aceito como o chamador mandar. Fase 2+/KMS, conforme já previsto no CLAUDE.md.
+- `token_map`/`ai_interaction.capture` ainda não tem nenhum chamador real (edge/gateway); ao
+  construir esse componente, decidir o modelo de autenticação serviço-a-serviço (hoje usa sessão
+  de usuário via `protectedProcedure`, o que pode não caber num gateway).
+
 ## Contexto regulatório (por que cada coisa existe)
 
 - **OAB — Recomendação nº 001/2024:** supervisão humana, sigilo, verificação de jurisprudência,

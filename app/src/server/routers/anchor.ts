@@ -1,24 +1,24 @@
 import { z } from "zod/v4";
-import { publicProcedure, router } from "../trpc/init";
+import { protectedProcedure, router } from "../trpc/init";
 import { pool } from "@/lib/db";
-import { buildMerkleTree, getMerkleProof, verifyMerkleProof, sha256 } from "@/lib/merkle";
+import { buildMerkleTree } from "@/lib/merkle";
 import { requestTimestamp, verifyTimestamp } from "@/lib/tsa-stub";
 
 export const anchorRouter = router({
-  createEpoch: publicProcedure
+  createEpoch: protectedProcedure
     .input(
       z.object({
-        org_id: z.string().guid(),
         from_seq: z.number().int(),
         to_seq: z.number().int(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      const orgId = ctx.orgId;
       const rows = await pool.query(
         `SELECT seq, row_hash FROM ai_interaction
          WHERE org_id = $1 AND seq >= $2 AND seq <= $3
          ORDER BY seq ASC`,
-        [input.org_id, input.from_seq, input.to_seq]
+        [orgId, input.from_seq, input.to_seq]
       );
 
       if (rows.rows.length === 0) {
@@ -34,7 +34,7 @@ export const anchorRouter = router({
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
         [
-          input.org_id, input.from_seq, input.to_seq,
+          orgId, input.from_seq, input.to_seq,
           root, tsaToken.token, tsaToken.timestamp,
         ]
       );
@@ -48,17 +48,17 @@ export const anchorRouter = router({
       };
     }),
 
-  verify: publicProcedure
+  verify: protectedProcedure
     .input(
       z.object({
-        org_id: z.string().guid(),
         anchor_id: z.string().guid(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
+      const orgId = ctx.orgId;
       const anchor = await pool.query(
         `SELECT * FROM audit_anchor WHERE id = $1 AND org_id = $2`,
-        [input.anchor_id, input.org_id]
+        [input.anchor_id, orgId]
       );
 
       if (anchor.rows.length === 0) {
@@ -71,7 +71,7 @@ export const anchorRouter = router({
         `SELECT seq, row_hash FROM ai_interaction
          WHERE org_id = $1 AND seq >= $2 AND seq <= $3
          ORDER BY seq ASC`,
-        [input.org_id, a.epoch_from_seq, a.epoch_to_seq]
+        [orgId, a.epoch_from_seq, a.epoch_to_seq]
       );
 
       const leaves = rows.rows.map((r: { row_hash: Buffer }) => r.row_hash);
@@ -94,14 +94,12 @@ export const anchorRouter = router({
       };
     }),
 
-  latest: publicProcedure
-    .input(z.object({ org_id: z.string().guid() }))
-    .query(async ({ input }) => {
+  latest: protectedProcedure.query(async ({ ctx }) => {
       const result = await pool.query(
         `SELECT id, epoch_from_seq, epoch_to_seq, encode(merkle_root, 'hex') as merkle_root, anchored_at
          FROM audit_anchor WHERE org_id = $1
          ORDER BY anchored_at DESC LIMIT 1`,
-        [input.org_id]
+        [ctx.orgId]
       );
       return result.rows[0] ?? null;
     }),

@@ -1,7 +1,14 @@
 const DATAJUD_BASE = "https://api-publica.datajud.cnj.jus.br";
-const DATAJUD_API_KEY =
-  process.env.DATAJUD_API_KEY ??
-  "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==";
+
+function getDatajudApiKey(): string {
+  const key = process.env.DATAJUD_API_KEY;
+  if (!key) {
+    throw new Error(
+      "DATAJUD_API_KEY não configurada. Defina a variável de ambiente antes de consultar o DATAJUD."
+    );
+  }
+  return key;
+}
 
 const TRIBUNAL_ALIASES: Record<string, string> = {
   stj: "api_publica_stj",
@@ -100,6 +107,9 @@ export async function searchDatajud(
   numeroProcesso: string,
   tribunalHint?: string
 ): Promise<DatajudSearchResult> {
+  // Falha explícita (não "não encontrado") se a chave não estiver configurada —
+  // o chamador deve tratar a exceção como nao_verificavel, nunca como ausência do registro.
+  const apiKey = getDatajudApiKey();
   const clean = numeroProcesso.replace(/[.\-]/g, "");
 
   const tribunals: string[] = [];
@@ -121,7 +131,7 @@ export async function searchDatajud(
       const res = await fetch(`${DATAJUD_BASE}/${alias}/_search`, {
         method: "POST",
         headers: {
-          Authorization: `ApiKey ${DATAJUD_API_KEY}`,
+          Authorization: `ApiKey ${apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -177,7 +187,6 @@ export function datajudSourceLookup(
 
     const hit = result.hits[0];
     const lastMove = hit.movimentos?.[0];
-    const isBaixado = lastMove?.nome?.toLowerCase().includes("baixa") ?? false;
 
     const content = [
       `Classe: ${hit.classe.nome}`,
@@ -195,7 +204,11 @@ export function datajudSourceLookup(
       source: "DATAJUD/CNJ",
       source_ref: `https://api-publica.datajud.cnj.jus.br/${result.tribunal}`,
       content,
-      revoked: isBaixado,
+      // O DATAJUD só confirma existência processual, não vigência de tese.
+      // "Baixa" é movimentação processual (arquivamento), não superação de entendimento —
+      // usá-la como proxy de "revogado" gerava falsos positivos/negativos de vigência.
+      // O eixo de vigência real (tese superada em STF/STJ) ainda não está implementado.
+      revoked: false,
     };
   });
 }

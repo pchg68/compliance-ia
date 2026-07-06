@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { publicProcedure, router } from "../trpc/init";
+import { publicProcedure, protectedProcedure, router } from "../trpc/init";
 import { pool } from "@/lib/db";
 import { extractCitations } from "@/lib/citation-extractor";
 import { validateAllCitations, type SourceLookupFn, type ValidationResult } from "@/lib/citation-validator";
@@ -81,31 +81,30 @@ export const citationRouter = router({
     }),
 
   /** Valida e persiste na trilha, vinculado a uma interação. */
-  validate: publicProcedure
+  validate: protectedProcedure
     .input(
       z.object({
-        org_id: z.string().guid(),
         interaction_id: z.string().guid(),
         response_text: z.string().max(200_000),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const citations = extractCitations(input.response_text);
       const map = await lookupMany(
         citations.map((c) => ({ canonicalKey: c.canonical_key ?? "", citeType: c.cite_type })),
-        input.org_id
+        ctx.orgId
       );
       const results = await validateAllCitations(citations, lookupFromMap(map));
-      await persistChecks(input.interaction_id, input.org_id, results);
+      await persistChecks(input.interaction_id, ctx.orgId, results);
       return summarize(results);
     }),
 
-  listByInteraction: publicProcedure
+  listByInteraction: protectedProcedure
     .input(z.object({ interaction_id: z.string().guid() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const result = await pool.query(
-        `SELECT * FROM citation_check WHERE interaction_id = $1 ORDER BY checked_at`,
-        [input.interaction_id]
+        `SELECT * FROM citation_check WHERE interaction_id = $1 AND org_id = $2 ORDER BY checked_at`,
+        [input.interaction_id, ctx.orgId]
       );
       return result.rows;
     }),

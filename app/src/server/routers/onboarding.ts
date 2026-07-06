@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { publicProcedure, protectedProcedure, router } from "../trpc/init";
+import { publicProcedure, protectedProcedure, adminProcedure, router } from "../trpc/init";
 import { pool } from "@/lib/db";
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../trpc/init";
@@ -73,7 +73,7 @@ export const onboardingRouter = router({
     }),
 
   // Convida usuário para a organização (admin only)
-  inviteUser: protectedProcedure
+  inviteUser: adminProcedure
     .input(
       z.object({
         email: z.string().email(),
@@ -107,7 +107,7 @@ export const onboardingRouter = router({
   }),
 
   // Atualiza papel do usuário
-  updateRole: protectedProcedure
+  updateRole: adminProcedure
     .input(z.object({ user_id: z.string().uuid(), role: z.enum(["member", "admin", "compliance", "developer"]) }))
     .mutation(async ({ ctx, input }) => {
       await pool.query(
