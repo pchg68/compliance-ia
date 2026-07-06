@@ -21,7 +21,7 @@ CREATE INDEX idx_alert_org_severity ON alert (org_id, severity);
 ALTER TABLE alert ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation_alert ON alert
-  USING (org_id = current_setting('app.current_org')::uuid);
+  USING (org_id = current_setting('app.current_org', true)::uuid);
 
 -- Alertas são append-only (evidência de compliance)
 CREATE TRIGGER no_delete_alert
