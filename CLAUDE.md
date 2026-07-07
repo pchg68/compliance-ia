@@ -131,8 +131,9 @@ npx supabase stop
 ## Débito técnico conhecido (auditoria 2026-07-06)
 
 Auditoria completa contra os 7 invariantes + os 3 desenhos técnicos, validada com Supabase local
-rodando (todas as migrations aplicam limpo, 134/134 testes passam) e com teste manual no navegador
-(signup, criação de escritório, dashboard, RBAC em `/equipe`). Corrigido nesta sessão:
+rodando (todas as migrations aplicam limpo, 153/153 testes passam) e com teste manual no navegador
+(signup, criação de escritório, dashboard, RBAC em `/equipe` e `/relatorios`, papel restrito
+`vexiajuris_app` ativo de ponta a ponta). Corrigido nesta sessão:
 RBAC ausente em quase todos os routers tRPC (org_id vinha do cliente, sem checar sessão),
 escalação de privilégio em `onboarding`/`jurisdiction`, mascaramento de PII não verificado no
 servidor em `interaction.capture`, chave DATAJUD hardcoded, heurística errada de `revoked` no
@@ -152,26 +153,48 @@ migration `20260706163639`, o que **valida de fato** que esse papel restrito fun
 corretamente `ai_interaction`/`policy`/`app_user` por org; sem contexto, falha fechado com erro de
 cast em vez de vazar dados).
 
-**Ainda pendente (não ativado nesta sessão — exige decidir a estratégia de rollout antes):**
-- O papel `vexiajuris_app` (migration `20260706163639`) está validado por teste, mas
-  `src/lib/db.ts` continua conectando como `postgres` em produção/dev (superuser, ignora RLS e
-  REVOKE). Ativar exige: provisionar a senha do papel via variável de ambiente/KMS (a senha da
-  migration, `change_me_before_activating`, é só para dev local), trocar a connection string da
-  aplicação, e então rodar a suíte inteira contra um banco real que nenhuma query legítima
-  dependia de privilégio de superuser (nenhuma encontrada nesta auditoria, mas vale conferir de
-  novo no momento da troca).
-- `current_setting('app.current_org')` nunca é definido por nenhuma query — a RLS de toda tabela
-  multi-tenant está descrita no schema mas inoperante em runtime. Precisa de `SET LOCAL
-  app.current_org` por request/transação (checkout de conexão dedicado, não `pool.query` solto).
-  Até lá, o isolamento multi-tenant real depende só da camada de aplicação (ctx.orgId nos
-  routers), que foi corrigida nesta auditoria.
-- `src/middleware.ts` foi **removido** nesta sessão: ele checava um cookie `sb-*-auth-token` que o
-  `@supabase/supabase-js` nunca cria (a sessão fica em `localStorage` por padrão) — na prática, o
-  middleware redirecionava QUALQUER rota além de `/` de volta para `/`, quebrando a navegação para
-  usuários logados (bug descoberto testando no navegador, não só de leitura de código). O gate real
-  de autenticação já é o `AuthGuard` (client) + `protectedProcedure`/`adminProcedure` (servidor). Se
+**Papel restrito ATIVADO nesta sessão** (o que a seção acima tratava como pendente):
+- `src/lib/db.ts` agora exporta dois pools: `pool` (papel `vexiajuris_app`, sem BYPASSRLS, sem
+  UPDATE/DELETE/TRUNCATE na trilha — usado por tudo) e `bootstrapPool` (superuser `postgres` —
+  usado SÓ por `onboarding.createOrg`, a única operação que precisa enxergar todas as orgs para
+  checar unicidade de e-mail e criar uma organização que ainda não existe).
+- `withOrgContext(orgId, fn)` abre uma transação, roda `SELECT set_config('app.current_org', $1,
+  true)` (escopo da transação, seguro com pool) e executa `fn` — é isso que faz a RLS filtrar de
+  verdade. `protectedProcedure`/`adminProcedure` (em `init.ts`) chamam isso automaticamente e
+  injetam `ctx.db` (o client da transação); todos os routers foram migrados de `pool.query` para
+  `ctx.db.query`.
+- Achado durante a ativação: `resolve_app_user()` (chamada em TODO request autenticado, em
+  `route.ts`, para descobrir a org do usuário a partir do e-mail) tinha o mesmo problema de
+  "ovo e galinha" — precisa buscar por e-mail entre todas as orgs antes de saber qual é a org
+  atual. Resolvido tornando a função `SECURITY DEFINER` (migration `20260706171500`), um furo
+  estreito e intencional na RLS: só essa função, só leitura, só os 4 campos necessários.
+  Sem esse ajuste, TODA resolução de contexto falhava silenciosamente (RLS devolvia zero linhas).
+- Validado com Supabase local (`DATABASE_URL` apontando para `vexiajuris_app`, `.env.local`) e
+  teste manual completo no navegador: signup, criação de escritório (via bootstrapPool), convite
+  de membro, dashboard, trilha de auditoria, relatório (6 queries em paralelo no mesmo `ctx.db`),
+  e confirmação de que `/relatorios` e o convite de membro continuam bloqueados de verdade para
+  um usuário `member` — tudo com RLS realmente ativa, não só a camada de aplicação.
+- Senha do papel: a migration cria `vexiajuris_app` com `change_me_before_activating` — só serve
+  para o Supabase local efêmero. Antes de apontar para qualquer banco real/compartilhado, rodar
+  `ALTER ROLE vexiajuris_app WITH PASSWORD '<segredo forte>'` manualmente e usar esse valor em
+  `DATABASE_URL` (nunca a senha do arquivo de migration, que fica no histórico do git).
+- `source-registry.ts` (usado por `citation.extract`/`validateText`, ambos públicos) continua
+  usando o `pool` global diretamente, sem `ctx.db` — não tem acesso ao contexto por request. Isso
+  é inofensivo hoje: `source_cache` não tem RLS (dado público) e o log em `source_lookup_log`
+  (que tem RLS) já está em try/catch silencioso por design, então na pior hipótese perde
+  silenciosamente uma entrada de log de auditoria quando chamado com org_id via `citation.validate`
+  — não quebra a validação em si. Rever se o log de auditoria de consultas a fontes se tornar
+  crítico.
+
+**Removido nesta sessão** (achado testando no navegador, não só lendo código):
+- `src/middleware.ts`: checava um cookie `sb-*-auth-token` que o `@supabase/supabase-js` nunca cria
+  (a sessão fica em `localStorage` por padrão) — na prática, o middleware redirecionava QUALQUER
+  rota além de `/` de volta para `/`, quebrando a navegação para usuários logados. O gate real de
+  autenticação já é o `AuthGuard` (client) + `protectedProcedure`/`adminProcedure` (servidor). Se
   no futuro quiser um gate de middleware de verdade, migrar para `@supabase/ssr` com sessão em
   cookie httpOnly — aí sim o middleware consegue validar antes de renderizar.
+
+**Ainda pendente:**
 - Mascaramento de PII: só cobre padrões estruturados (CPF/CNPJ/email/telefone/CEP/OAB/processo/RG).
   Nomes próprios e endereços em texto livre não são mascarados — falta NER PT-BR (Fase 2, já
   prevista no desenho técnico).

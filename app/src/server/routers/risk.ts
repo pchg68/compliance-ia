@@ -1,6 +1,5 @@
 import { z } from "zod/v4";
 import { protectedProcedure, adminProcedure, router } from "../trpc/init";
-import { pool } from "@/lib/db";
 import { classifyRisk, type RiskSignals, type DecisionRule } from "@/lib/risk-engine";
 import { getChecklistItems } from "@/lib/checklist";
 import { getJurisdiction } from "@/lib/jurisdiction";
@@ -23,7 +22,7 @@ export const riskRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const orgId = ctx.orgId;
-      const policyResult = await pool.query(
+      const policyResult = await ctx.db!.query(
         `SELECT rules, jurisdiction FROM policy WHERE org_id = $1 AND active = true ORDER BY version DESC LIMIT 1`,
         [orgId]
       );
@@ -45,7 +44,7 @@ export const riskRouter = router({
               : [])
         : getChecklistItems(result.tier);
 
-      await pool.query(
+      await ctx.db!.query(
         `INSERT INTO risk_assessment (interaction_id, org_id, signals, tier, matched_rule, decision, controls_applied, computed_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
@@ -79,7 +78,7 @@ export const riskRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `INSERT INTO checklist_response (interaction_id, org_id, items, attested_by, approver_id, approval_status)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
@@ -104,7 +103,7 @@ export const riskRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      await pool.query(
+      await ctx.db!.query(
         `UPDATE checklist_response SET approval_status = $1, approver_id = $2, decided_at = now()
          WHERE id = $3 AND approval_status = 'pendente' AND org_id = $4`,
         [input.status, ctx.userId, input.checklist_id, ctx.orgId]

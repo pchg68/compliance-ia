@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
+import type { PoolClient } from "pg";
 import { publicProcedure, protectedProcedure, router } from "../trpc/init";
-import { pool } from "@/lib/db";
 import { extractCitations } from "@/lib/citation-extractor";
 import { validateAllCitations, type SourceLookupFn, type ValidationResult } from "@/lib/citation-validator";
 import { lookupMany } from "@/lib/source-registry";
@@ -19,6 +19,7 @@ function lookupFromMap(map: Map<string, ReturnType<typeof Object> | unknown>): S
 }
 
 async function persistChecks(
+  db: PoolClient,
   interactionId: string,
   orgId: string,
   results: ValidationResult[]
@@ -38,7 +39,7 @@ async function persistChecks(
       r.status, r.source, r.source_ref, r.evidence_excerpt, r.confidence
     );
   });
-  await pool.query(
+  await db.query(
     `INSERT INTO citation_check
       (interaction_id, org_id, raw_text, cite_type, canonical_key, status, source, source_ref, evidence_excerpt, confidence)
      VALUES ${tuples.join(",")}`,
@@ -95,14 +96,14 @@ export const citationRouter = router({
         ctx.orgId
       );
       const results = await validateAllCitations(citations, lookupFromMap(map));
-      await persistChecks(input.interaction_id, ctx.orgId, results);
+      await persistChecks(ctx.db!, input.interaction_id, ctx.orgId, results);
       return summarize(results);
     }),
 
   listByInteraction: protectedProcedure
     .input(z.object({ interaction_id: z.string().guid() }))
     .query(async ({ ctx, input }) => {
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `SELECT * FROM citation_check WHERE interaction_id = $1 AND org_id = $2 ORDER BY checked_at`,
         [input.interaction_id, ctx.orgId]
       );

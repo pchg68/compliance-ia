@@ -1,12 +1,11 @@
 import { z } from "zod/v4";
 import { protectedProcedure, router } from "../trpc/init";
-import { pool } from "@/lib/db";
 
 export const dashboardRouter = router({
   summary: protectedProcedure
     .input(z.object({ org_id: z.string().guid().optional() }).optional())
     .query(async ({ ctx }) => {
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `SELECT * FROM v_dashboard_summary WHERE org_id = $1`,
         [ctx.orgId]
       );
@@ -21,7 +20,7 @@ export const dashboardRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `SELECT * FROM v_dashboard_daily
          WHERE org_id = $1 AND day >= current_date - $2::int
          ORDER BY day DESC`,
@@ -33,7 +32,7 @@ export const dashboardRouter = router({
   citationStats: protectedProcedure
     .input(z.object({ org_id: z.string().guid().optional() }).optional())
     .query(async ({ ctx }) => {
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `SELECT * FROM v_citation_stats WHERE org_id = $1`,
         [ctx.orgId]
       );
@@ -43,7 +42,7 @@ export const dashboardRouter = router({
   alertStats: protectedProcedure
     .input(z.object({ org_id: z.string().guid().optional() }).optional())
     .query(async ({ ctx }) => {
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `SELECT severity, status, COUNT(*)::int AS count
          FROM alert WHERE org_id = $1
          GROUP BY severity, status
@@ -60,7 +59,7 @@ export const dashboardRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `SELECT u.email, COUNT(*)::int AS interactions,
                 COUNT(*) FILTER (WHERE i.decision = 'block')::int AS blocked
          FROM ai_interaction i

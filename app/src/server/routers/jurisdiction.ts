@@ -58,9 +58,10 @@ export const jurisdictionRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const orgId = ctx.orgId;
+      const db = ctx.db!;
       const profile = getJurisdiction(input.jurisdiction);
 
-      await pool.query(
+      await db.query(
         `INSERT INTO jurisdiction_config (org_id, jurisdiction, label, locale, regulatory_refs, risk_levels, active)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (org_id, jurisdiction) DO UPDATE SET active = $7, label = $3`,
@@ -73,7 +74,7 @@ export const jurisdictionRouter = router({
       );
 
       // Criar/atualizar a policy com a decision_table da jurisdição
-      const existingPolicy = await pool.query(
+      const existingPolicy = await db.query(
         `SELECT id, version FROM policy WHERE org_id = $1 AND jurisdiction = $2 ORDER BY version DESC LIMIT 1`,
         [orgId, profile.code]
       );
@@ -83,12 +84,12 @@ export const jurisdictionRouter = router({
         : 1;
 
       // Desativar policies anteriores desta jurisdição
-      await pool.query(
+      await db.query(
         `UPDATE policy SET active = false WHERE org_id = $1 AND jurisdiction = $2`,
         [orgId, profile.code]
       );
 
-      await pool.query(
+      await db.query(
         `INSERT INTO policy (org_id, version, jurisdiction, rules, active)
          VALUES ($1, $2, $3, $4, true)`,
         [
@@ -98,7 +99,7 @@ export const jurisdictionRouter = router({
       );
 
       if (input.active) {
-        await pool.query(
+        await db.query(
           `UPDATE organization SET default_jurisdiction = $1 WHERE id = $2`,
           [profile.code, orgId]
         );

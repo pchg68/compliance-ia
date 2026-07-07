@@ -1,6 +1,5 @@
 import { z } from "zod/v4";
 import { protectedProcedure, router } from "../trpc/init";
-import { pool } from "@/lib/db";
 
 export const promptRouter = router({
   create: protectedProcedure
@@ -16,7 +15,7 @@ export const promptRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `INSERT INTO prompt_template (org_id, title, description, category, task_type, risk_class, template_text, variables, approved_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING id, version`,
@@ -50,7 +49,7 @@ export const promptRouter = router({
         conditions.push(`category = $${params.length}`);
       }
 
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `SELECT id, title, description, category, task_type, risk_class, template_text, variables, version, active, created_at
          FROM prompt_template
          WHERE ${conditions.join(" AND ")}
@@ -63,7 +62,7 @@ export const promptRouter = router({
   get: protectedProcedure
     .input(z.object({ id: z.string().guid() }))
     .query(async ({ ctx, input }) => {
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `SELECT * FROM prompt_template WHERE id = $1 AND org_id = $2`,
         [input.id, ctx.orgId]
       );
@@ -78,7 +77,7 @@ export const promptRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `SELECT template_text, variables, task_type, risk_class FROM prompt_template WHERE id = $1 AND org_id = $2 AND active = true`,
         [input.template_id, ctx.orgId]
       );
@@ -101,7 +100,7 @@ export const promptRouter = router({
   deactivate: protectedProcedure
     .input(z.object({ id: z.string().guid() }))
     .mutation(async ({ ctx, input }) => {
-      await pool.query(
+      await ctx.db!.query(
         `UPDATE prompt_template SET active = false, updated_at = now() WHERE id = $1 AND org_id = $2`,
         [input.id, ctx.orgId]
       );

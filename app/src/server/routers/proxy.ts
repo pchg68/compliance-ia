@@ -1,6 +1,5 @@
 import { z } from "zod/v4";
 import { protectedProcedure, router } from "../trpc/init";
-import { pool } from "@/lib/db";
 import { maskPii } from "@/lib/pii-masker";
 import { classifyRisk, type RiskSignals, type DecisionRule } from "@/lib/risk-engine";
 import { evaluateAlerts } from "@/lib/alert-rules";
@@ -31,7 +30,7 @@ export const proxyRouter = router({
       const maskResult = maskPii(input.prompt);
 
       // 2. Classificar risco
-      const policyResult = await pool.query(
+      const policyResult = await ctx.db!.query(
         `SELECT rules FROM policy WHERE org_id = $1 AND active = true ORDER BY version DESC LIMIT 1`,
         [orgId]
       );
@@ -49,7 +48,7 @@ export const proxyRouter = router({
       // 3. Decisão de gate
       if (risk.decision === "block") {
         // Registrar proxy_request com bloqueio
-        await pool.query(
+        await ctx.db!.query(
           `INSERT INTO proxy_request (org_id, provider, endpoint, status_code, latency_ms, fail_mode)
            VALUES ($1, $2, $3, 403, $4, 'fail_closed')`,
           [orgId, input.provider, `/v1/messages`, Date.now() - startTime]
@@ -58,7 +57,7 @@ export const proxyRouter = router({
         // Gerar alertas
         const alerts = evaluateAlerts(riskSignals, "block", maskResult.matches.length);
         for (const alert of alerts) {
-          await pool.query(
+          await ctx.db!.query(
             `INSERT INTO alert (org_id, severity, category, title, description)
              VALUES ($1, $2, $3, $4, $5)`,
             [orgId, alert.severity, alert.category, alert.title, alert.description]
@@ -78,7 +77,7 @@ export const proxyRouter = router({
       // 4. Em produção: forward para o provedor. Aqui, simulamos.
       const latencyMs = Date.now() - startTime;
 
-      await pool.query(
+      await ctx.db!.query(
         `INSERT INTO proxy_request (org_id, provider, endpoint, status_code, latency_ms, streaming, fail_mode)
          VALUES ($1, $2, $3, 200, $4, false, 'fail_closed')`,
         [orgId, input.provider, `/v1/messages`, latencyMs]
@@ -87,7 +86,7 @@ export const proxyRouter = router({
       // Gerar alertas se necessário
       const alerts = evaluateAlerts(riskSignals, risk.decision, maskResult.matches.length);
       for (const alert of alerts) {
-        await pool.query(
+        await ctx.db!.query(
           `INSERT INTO alert (org_id, severity, category, title, description)
            VALUES ($1, $2, $3, $4, $5)`,
           [orgId, alert.severity, alert.category, alert.title, alert.description]
@@ -114,7 +113,7 @@ export const proxyRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `SELECT id, provider, endpoint, status_code, latency_ms, streaming, fail_mode, created_at
          FROM proxy_request WHERE org_id = $1 ORDER BY created_at DESC LIMIT $2`,
         [ctx.orgId, input.limit]

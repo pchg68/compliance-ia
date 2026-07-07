@@ -1,6 +1,5 @@
 import { z } from "zod/v4";
 import { protectedProcedure, router } from "../trpc/init";
-import { pool } from "@/lib/db";
 import { buildMerkleTree } from "@/lib/merkle";
 import { requestTimestamp, verifyTimestamp } from "@/lib/tsa-stub";
 
@@ -14,7 +13,7 @@ export const anchorRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const orgId = ctx.orgId;
-      const rows = await pool.query(
+      const rows = await ctx.db!.query(
         `SELECT seq, row_hash FROM ai_interaction
          WHERE org_id = $1 AND seq >= $2 AND seq <= $3
          ORDER BY seq ASC`,
@@ -29,7 +28,7 @@ export const anchorRouter = router({
       const { root } = buildMerkleTree(leaves);
       const tsaToken = requestTimestamp(root);
 
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `INSERT INTO audit_anchor (org_id, epoch_from_seq, epoch_to_seq, merkle_root, tsa_token, anchored_at)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
@@ -56,7 +55,7 @@ export const anchorRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const orgId = ctx.orgId;
-      const anchor = await pool.query(
+      const anchor = await ctx.db!.query(
         `SELECT * FROM audit_anchor WHERE id = $1 AND org_id = $2`,
         [input.anchor_id, orgId]
       );
@@ -67,7 +66,7 @@ export const anchorRouter = router({
 
       const a = anchor.rows[0];
 
-      const rows = await pool.query(
+      const rows = await ctx.db!.query(
         `SELECT seq, row_hash FROM ai_interaction
          WHERE org_id = $1 AND seq >= $2 AND seq <= $3
          ORDER BY seq ASC`,
@@ -95,7 +94,7 @@ export const anchorRouter = router({
     }),
 
   latest: protectedProcedure.query(async ({ ctx }) => {
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `SELECT id, epoch_from_seq, epoch_to_seq, encode(merkle_root, 'hex') as merkle_root, anchored_at
          FROM audit_anchor WHERE org_id = $1
          ORDER BY anchored_at DESC LIMIT 1`,

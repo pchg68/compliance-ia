@@ -1,6 +1,5 @@
 import { z } from "zod/v4";
 import { adminProcedure, router } from "../trpc/init";
-import { pool } from "@/lib/db";
 
 export const reportRouter = router({
   compliance: adminProcedure
@@ -17,7 +16,7 @@ export const reportRouter = router({
 
       const [summary, byRisk, byDecision, byTaskType, byUser, chainStatus] =
         await Promise.all([
-          pool.query(
+          ctx.db!.query(
             `SELECT
                COUNT(*)::int AS total_interactions,
                COUNT(*) FILTER (WHERE checklist_passed = true)::int AS checklist_passed,
@@ -28,28 +27,28 @@ export const reportRouter = router({
              WHERE org_id = $1 AND created_at BETWEEN $2 AND $3`,
             [org_id, period_start, period_end]
           ),
-          pool.query(
+          ctx.db!.query(
             `SELECT risk_class, COUNT(*)::int AS count
              FROM ai_interaction
              WHERE org_id = $1 AND created_at BETWEEN $2 AND $3
              GROUP BY risk_class ORDER BY count DESC`,
             [org_id, period_start, period_end]
           ),
-          pool.query(
+          ctx.db!.query(
             `SELECT decision, COUNT(*)::int AS count
              FROM ai_interaction
              WHERE org_id = $1 AND created_at BETWEEN $2 AND $3
              GROUP BY decision ORDER BY count DESC`,
             [org_id, period_start, period_end]
           ),
-          pool.query(
+          ctx.db!.query(
             `SELECT task_type, COUNT(*)::int AS count
              FROM ai_interaction
              WHERE org_id = $1 AND created_at BETWEEN $2 AND $3
              GROUP BY task_type ORDER BY count DESC`,
             [org_id, period_start, period_end]
           ),
-          pool.query(
+          ctx.db!.query(
             `SELECT u.email, COUNT(*)::int AS count
              FROM ai_interaction i
              JOIN app_user u ON u.id = i.user_id
@@ -57,7 +56,7 @@ export const reportRouter = router({
              GROUP BY u.email ORDER BY count DESC`,
             [org_id, period_start, period_end]
           ),
-          pool.query(
+          ctx.db!.query(
             `SELECT
                COUNT(*)::int AS total_records,
                bool_and(row_hash IS NOT NULL)::boolean AS all_hashed
@@ -67,7 +66,7 @@ export const reportRouter = router({
           ),
         ]);
 
-      const org = await pool.query(`SELECT name FROM organization WHERE id = $1`, [org_id]);
+      const org = await ctx.db!.query(`SELECT name FROM organization WHERE id = $1`, [org_id]);
 
       return {
         report_type: "compliance",

@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "../trpc/init";
-import { pool } from "@/lib/db";
+import { bootstrapPool } from "@/lib/db";
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../trpc/init";
 
@@ -22,7 +22,10 @@ export const onboardingRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const client = await pool.connect();
+      // Bootstrap: org nova ainda não tem org_id para satisfazer a RLS do papel
+      // restrito, e a checagem de e-mail precisa enxergar TODAS as orgs — por
+      // isso, e só aqui, usamos o pool com privilégio elevado (ver db.ts).
+      const client = await bootstrapPool.connect();
       try {
         await client.query("BEGIN");
 
@@ -81,7 +84,7 @@ export const onboardingRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const existing = await pool.query(
+      const existing = await ctx.db!.query(
         `SELECT id FROM app_user WHERE org_id = $1 AND email = $2`,
         [ctx.orgId, input.email]
       );
@@ -89,7 +92,7 @@ export const onboardingRouter = router({
         throw new TRPCError({ code: "CONFLICT", message: "Usuário já cadastrado neste escritório." });
       }
 
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `INSERT INTO app_user (org_id, email, role) VALUES ($1, $2, $3) RETURNING id`,
         [ctx.orgId, input.email, input.role]
       );
@@ -99,7 +102,7 @@ export const onboardingRouter = router({
 
   // Lista usuários da organização
   listUsers: protectedProcedure.query(async ({ ctx }) => {
-    const result = await pool.query(
+    const result = await ctx.db!.query(
       `SELECT id, email, role, created_at FROM app_user WHERE org_id = $1 ORDER BY created_at`,
       [ctx.orgId]
     );
@@ -110,7 +113,7 @@ export const onboardingRouter = router({
   updateRole: adminProcedure
     .input(z.object({ user_id: z.string().uuid(), role: z.enum(["member", "admin", "compliance", "developer"]) }))
     .mutation(async ({ ctx, input }) => {
-      await pool.query(
+      await ctx.db!.query(
         `UPDATE app_user SET role = $1 WHERE id = $2 AND org_id = $3`,
         [input.role, input.user_id, ctx.orgId]
       );

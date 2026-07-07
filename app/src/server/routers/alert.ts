@@ -1,6 +1,5 @@
 import { z } from "zod/v4";
 import { protectedProcedure, router } from "../trpc/init";
-import { pool } from "@/lib/db";
 
 export const alertRouter = router({
   create: protectedProcedure
@@ -15,7 +14,7 @@ export const alertRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `INSERT INTO alert (org_id, interaction_id, severity, category, title, description, metadata)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id`,
@@ -53,7 +52,7 @@ export const alertRouter = router({
 
       params.push(input.limit);
 
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `SELECT id, interaction_id, severity, category, title, description, status, created_at
          FROM alert
          WHERE ${conditions.join(" AND ")}
@@ -72,7 +71,7 @@ export const alertRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      await pool.query(
+      await ctx.db!.query(
         `UPDATE alert SET status = $1, resolved_by = $2, resolved_at = now()
          WHERE id = $3 AND status = 'open' AND org_id = $4`,
         [input.status, ctx.userId, input.alert_id, ctx.orgId]
@@ -83,7 +82,7 @@ export const alertRouter = router({
   summary: protectedProcedure
     .input(z.object({ org_id: z.string().guid().optional() }).optional())
     .query(async ({ ctx }) => {
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `SELECT severity, status, COUNT(*)::int AS count
          FROM alert WHERE org_id = $1
          GROUP BY severity, status

@@ -1,7 +1,6 @@
 import { z } from "zod/v4";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../trpc/init";
-import { pool } from "@/lib/db";
 import {
   computeRowHash,
   computeContentHash,
@@ -47,111 +46,103 @@ export const interactionRouter = router({
     }
 
     const orgId = ctx.orgId;
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
+    const db = ctx.db!;
 
-      // Advisory lock por org para serializar a cadeia de hash
-      const lockKey = Buffer.from(orgId.replace(/-/g, ""), "hex");
-      const lockId = lockKey.readInt32BE(0);
-      await client.query("SELECT pg_advisory_xact_lock($1)", [lockId]);
+    // Advisory lock por org para serializar a cadeia de hash. Transação é a que
+    // já foi aberta pelo middleware protectedProcedure (withOrgContext) — não
+    // abrimos uma nova aqui, só reaproveitamos a mesma conexão/transação.
+    const lockKey = Buffer.from(orgId.replace(/-/g, ""), "hex");
+    const lockId = lockKey.readInt32BE(0);
+    await db.query("SELECT pg_advisory_xact_lock($1)", [lockId]);
 
-      // Buscar último seq e prev_hash do tenant
-      const lastRow = await client.query(
-        `SELECT seq, row_hash FROM ai_interaction
-         WHERE org_id = $1 ORDER BY seq DESC LIMIT 1`,
-        [orgId]
-      );
+    // Buscar último seq e prev_hash do tenant
+    const lastRow = await db.query(
+      `SELECT seq, row_hash FROM ai_interaction
+       WHERE org_id = $1 ORDER BY seq DESC LIMIT 1`,
+      [orgId]
+    );
 
-      const seq = lastRow.rows.length > 0 ? Number(lastRow.rows[0].seq) + 1 : 1;
-      const prevHash: Buffer | null =
-        lastRow.rows.length > 0 ? lastRow.rows[0].row_hash : null;
+    const seq = lastRow.rows.length > 0 ? Number(lastRow.rows[0].seq) + 1 : 1;
+    const prevHash: Buffer | null =
+      lastRow.rows.length > 0 ? lastRow.rows[0].row_hash : null;
 
-      const salt = orgId;
-      const promptOrigHash = computeContentHash(input.prompt_original, salt);
-      const responseOrigHash = input.response_original
-        ? computeContentHash(input.response_original, salt)
-        : null;
+    const salt = orgId;
+    const promptOrigHash = computeContentHash(input.prompt_original, salt);
+    const responseOrigHash = input.response_original
+      ? computeContentHash(input.response_original, salt)
+      : null;
 
-      const now = new Date().toISOString();
+    const now = new Date().toISOString();
 
-      const hashable: HashableInteraction = {
-        org_id: orgId,
-        seq,
-        user_id: ctx.userId,
-        provider: input.provider,
-        model: input.model,
-        task_type: input.task_type,
-        risk_class: input.risk_class,
-        prompt_masked: input.prompt_masked,
-        response_masked: input.response_masked,
-        prompt_orig_hash: promptOrigHash.toString("hex"),
-        response_orig_hash: responseOrigHash?.toString("hex") ?? null,
-        decision: input.decision,
-        checklist_passed: input.checklist_passed,
-        citations: input.citations ?? null,
-        created_at: now,
-        hash_schema_version: CURRENT_HASH_SCHEMA_VERSION,
-      };
+    const hashable: HashableInteraction = {
+      org_id: orgId,
+      seq,
+      user_id: ctx.userId,
+      provider: input.provider,
+      model: input.model,
+      task_type: input.task_type,
+      risk_class: input.risk_class,
+      prompt_masked: input.prompt_masked,
+      response_masked: input.response_masked,
+      prompt_orig_hash: promptOrigHash.toString("hex"),
+      response_orig_hash: responseOrigHash?.toString("hex") ?? null,
+      decision: input.decision,
+      checklist_passed: input.checklist_passed,
+      citations: input.citations ?? null,
+      created_at: now,
+      hash_schema_version: CURRENT_HASH_SCHEMA_VERSION,
+    };
 
-      const rowHash = computeRowHash(hashable, prevHash);
+    const rowHash = computeRowHash(hashable, prevHash);
 
-      const result = await client.query(
-        `INSERT INTO ai_interaction (
-          org_id, seq, user_id, provider, model, task_type, risk_class,
-          prompt_masked, response_masked, prompt_orig_hash, response_orig_hash,
-          policy_id, decision, pii_technique, injection_flags,
-          checklist_passed, citations, prev_hash, row_hash, created_at, hash_schema_version
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7,
-          $8, $9, $10, $11,
-          $12, $13, $14, $15,
-          $16, $17, $18, $19, $20, $21
-        ) RETURNING id`,
+    const result = await db.query(
+      `INSERT INTO ai_interaction (
+        org_id, seq, user_id, provider, model, task_type, risk_class,
+        prompt_masked, response_masked, prompt_orig_hash, response_orig_hash,
+        policy_id, decision, pii_technique, injection_flags,
+        checklist_passed, citations, prev_hash, row_hash, created_at, hash_schema_version
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7,
+        $8, $9, $10, $11,
+        $12, $13, $14, $15,
+        $16, $17, $18, $19, $20, $21
+      ) RETURNING id`,
+      [
+        orgId, seq, ctx.userId, input.provider, input.model,
+        input.task_type, input.risk_class,
+        input.prompt_masked, input.response_masked,
+        promptOrigHash, responseOrigHash,
+        input.policy_id, input.decision,
+        input.pii_technique ? JSON.stringify(input.pii_technique) : null,
+        input.injection_flags ? JSON.stringify(input.injection_flags) : null,
+        input.checklist_passed,
+        input.citations ? JSON.stringify(input.citations) : null,
+        prevHash, rowHash, now, CURRENT_HASH_SCHEMA_VERSION,
+      ]
+    );
+
+    const interactionId = result.rows[0].id;
+
+    if (input.token_map_ciphertext && input.token_map_wrapped_key) {
+      await db.query(
+        `INSERT INTO token_map (interaction_id, org_id, ciphertext, wrapped_data_key)
+         VALUES ($1, $2, $3, $4)`,
         [
-          orgId, seq, ctx.userId, input.provider, input.model,
-          input.task_type, input.risk_class,
-          input.prompt_masked, input.response_masked,
-          promptOrigHash, responseOrigHash,
-          input.policy_id, input.decision,
-          input.pii_technique ? JSON.stringify(input.pii_technique) : null,
-          input.injection_flags ? JSON.stringify(input.injection_flags) : null,
-          input.checklist_passed,
-          input.citations ? JSON.stringify(input.citations) : null,
-          prevHash, rowHash, now, CURRENT_HASH_SCHEMA_VERSION,
+          interactionId,
+          orgId,
+          Buffer.from(input.token_map_ciphertext, "base64"),
+          Buffer.from(input.token_map_wrapped_key, "base64"),
         ]
       );
-
-      const interactionId = result.rows[0].id;
-
-      if (input.token_map_ciphertext && input.token_map_wrapped_key) {
-        await client.query(
-          `INSERT INTO token_map (interaction_id, org_id, ciphertext, wrapped_data_key)
-           VALUES ($1, $2, $3, $4)`,
-          [
-            interactionId,
-            orgId,
-            Buffer.from(input.token_map_ciphertext, "base64"),
-            Buffer.from(input.token_map_wrapped_key, "base64"),
-          ]
-        );
-      }
-
-      await client.query("COMMIT");
-
-      return { id: interactionId, seq, row_hash: rowHash.toString("hex") };
-    } catch (err) {
-      await client.query("ROLLBACK");
-      throw err;
-    } finally {
-      client.release();
     }
+
+    return { id: interactionId, seq, row_hash: rowHash.toString("hex") };
   }),
 
   list: protectedProcedure
     .input(z.object({ org_id: z.string().guid().optional(), limit: z.number().int().max(100).default(50) }))
     .query(async ({ ctx, input }) => {
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `SELECT id, seq, user_id, provider, model, task_type, risk_class,
                 decision, checklist_passed, created_at
          FROM ai_interaction
@@ -166,7 +157,7 @@ export const interactionRouter = router({
   verifyChain: protectedProcedure
     .input(z.object({ org_id: z.string().guid().optional() }).optional())
     .query(async ({ ctx }) => {
-      const result = await pool.query(
+      const result = await ctx.db!.query(
         `SELECT seq, org_id, user_id, provider, model, task_type, risk_class,
                 prompt_masked, response_masked,
                 encode(prompt_orig_hash, 'hex') as prompt_orig_hash,
