@@ -178,13 +178,22 @@ cast em vez de vazar dados).
   para o Supabase local efêmero. Antes de apontar para qualquer banco real/compartilhado, rodar
   `ALTER ROLE vexiajuris_app WITH PASSWORD '<segredo forte>'` manualmente e usar esse valor em
   `DATABASE_URL` (nunca a senha do arquivo de migration, que fica no histórico do git).
-- `source-registry.ts` (usado por `citation.extract`/`validateText`, ambos públicos) continua
-  usando o `pool` global diretamente, sem `ctx.db` — não tem acesso ao contexto por request. Isso
-  é inofensivo hoje: `source_cache` não tem RLS (dado público) e o log em `source_lookup_log`
-  (que tem RLS) já está em try/catch silencioso por design, então na pior hipótese perde
-  silenciosamente uma entrada de log de auditoria quando chamado com org_id via `citation.validate`
-  — não quebra a validação em si. Rever se o log de auditoria de consultas a fontes se tornar
-  crítico.
+- `source-registry.ts`: `lookupSource`/`lookupMany` agora aceitam um `db` opcional (default: pool
+  global). `citation.validate` (autenticado) passa `ctx.db`, então o log em `source_lookup_log`
+  (que tem RLS) grava corretamente com org_id real. `citation.extract`/`validateText` (públicos)
+  continuam sem org, usando o pool global — sem problema, pois `org_id IS NULL` sempre passa na
+  policy.
+- **Bug real encontrado escrevendo o teste de falha de rede** (`tests/source-registry.test.ts`):
+  `searchDatajud` (datajud-client.ts) engolia timeout/erro de rede de TODOS os tribunais e
+  devolvia `{found:false}` — indistinguível de "processo realmente não existe" — violando o
+  invariante 3 (rede fora do ar virava `nao_localizada` com 90% de confiança em vez de
+  `nao_verificavel`). Corrigido: só retorna `found:false` se pelo menos um tribunal respondeu de
+  verdade (200, mesmo com zero resultados); se todos falharem, lança erro, que o chamador já
+  tratava corretamente como `nao_verificavel`.
+- LexML: heurística de "página curta = não encontrada" dependia só de tamanho, sem o marcador
+  textual — podia marcar `nao_localizada` uma norma real e curta. Separado em `isNotFoundPage`
+  (marcador textual, sinal forte) e `isAmbiguousPage` (só tamanho, sinal fraco); o caso ambíguo
+  agora devolve `null` (`nao_verificavel`), nunca uma afirmação de ausência.
 
 **Removido nesta sessão** (achado testando no navegador, não só lendo código):
 - `src/middleware.ts`: checava um cookie `sb-*-auth-token` que o `@supabase/supabase-js` nunca cria

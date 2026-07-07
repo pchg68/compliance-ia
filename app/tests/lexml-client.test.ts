@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canonicalToUrn, isNotFoundPage } from "../src/lib/lexml-client";
+import { canonicalToUrn, isNotFoundPage, isAmbiguousPage } from "../src/lib/lexml-client";
 
 describe("LexML — detecção de página 'não encontrada'", () => {
   it("detecta marcador de não encontrado", () => {
@@ -7,13 +7,26 @@ describe("LexML — detecção de página 'não encontrada'", () => {
     expect(isNotFoundPage("<html>nao encontrado</html>")).toBe(true);
   });
 
-  it("detecta página curta como não encontrada", () => {
-    expect(isNotFoundPage("<html>erro</html>")).toBe(true);
+  it("página curta sem marcador NÃO é tratada como confirmadamente não encontrada", () => {
+    // Tamanho sozinho é sinal fraco demais para afirmar ausência (invariante 3) —
+    // isNotFoundPage exige o marcador textual; ver isAmbiguousPage para o caso incerto.
+    expect(isNotFoundPage("<html>erro</html>")).toBe(false);
   });
 
   it("trata página grande de norma real como encontrada", () => {
     const big = "<html><title>Lei 13.105/2015</title>" + "x".repeat(6000) + "</html>";
     expect(isNotFoundPage(big)).toBe(false);
+  });
+});
+
+describe("LexML — página ambígua (sinal fraco, não confirma nem nega)", () => {
+  it("marca página curta sem marcador como ambígua", () => {
+    expect(isAmbiguousPage("<html>erro</html>")).toBe(true);
+  });
+
+  it("página grande não é ambígua", () => {
+    const big = "<html><title>Lei 13.105/2015</title>" + "x".repeat(6000) + "</html>";
+    expect(isAmbiguousPage(big)).toBe(false);
   });
 });
 

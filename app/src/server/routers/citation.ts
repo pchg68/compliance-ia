@@ -93,7 +93,8 @@ export const citationRouter = router({
       const citations = extractCitations(input.response_text);
       const map = await lookupMany(
         citations.map((c) => ({ canonicalKey: c.canonical_key ?? "", citeType: c.cite_type })),
-        ctx.orgId
+        ctx.orgId,
+        ctx.db!
       );
       const results = await validateAllCitations(citations, lookupFromMap(map));
       await persistChecks(ctx.db!, input.interaction_id, ctx.orgId, results);

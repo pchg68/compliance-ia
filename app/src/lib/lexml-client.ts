@@ -53,13 +53,20 @@ export function canonicalToUrn(canonicalKey: string): string | null {
   return `urn:lex:br:${esfera}:${tipoUrn}:${numero}`;
 }
 
-/** Página de URN inexistente é curta e traz o marcador "não encontrado". */
+/**
+ * Página de URN inexistente traz o marcador textual "não encontrado" — sinal forte,
+ * suficiente para afirmar `nao_localizada`. Tamanho de página sozinho é sinal fraco
+ * demais para essa afirmação (uma norma real e curta seria erroneamente marcada como
+ * inexistente); vira `isAmbiguous`, que o chamador trata como não-verificável, nunca
+ * como confirmação de ausência (invariante 3: na dúvida, não afirma).
+ */
 export function isNotFoundPage(html: string): boolean {
-  if (/n[aã]o\s+encontrad/i.test(html)) return true;
-  // Heurística de tamanho: páginas de norma real são grandes (>5KB);
-  // as de erro ficam na casa de ~1KB.
-  if (html.length < 2000) return true;
-  return false;
+  return /n[aã]o\s+encontrad/i.test(html);
+}
+
+/** Página bem menor que o esperado para uma norma real, sem o marcador explícito. */
+export function isAmbiguousPage(html: string): boolean {
+  return html.length < 2000;
 }
 
 /** Extrai o título legível da página da norma, se presente. */
@@ -105,6 +112,12 @@ export async function lexmlLookup(
       revoked: false,
       http_status: res.status,
     };
+  }
+
+  if (isAmbiguousPage(html)) {
+    // Sinal fraco demais para afirmar "não localizada" — devolve null
+    // (nao_verificavel), nunca uma confirmação de ausência por inferência.
+    return null;
   }
 
   const title = parseTitle(html);

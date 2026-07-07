@@ -126,6 +126,12 @@ export async function searchDatajud(
     tribunals.push("api_publica_stj", "api_publica_tjsp", "api_publica_tjpr");
   }
 
+  // Só marca "não encontrado" se pelo menos um tribunal respondeu de verdade
+  // (mesmo que com zero resultados). Se TODOS falharem (rede/timeout/erro HTTP),
+  // isso é "não conseguimos verificar", nunca "processo não existe" — propaga
+  // como erro para o chamador tratar como nao_verificavel (invariante 3).
+  let anySucceeded = false;
+
   for (const alias of tribunals) {
     try {
       const res = await fetch(`${DATAJUD_BASE}/${alias}/_search`, {
@@ -143,6 +149,7 @@ export async function searchDatajud(
       if (!res.ok) continue;
 
       const data = await res.json();
+      anySucceeded = true;
       const hits = data.hits?.hits ?? [];
 
       if (hits.length > 0) {
@@ -156,6 +163,12 @@ export async function searchDatajud(
     } catch {
       continue;
     }
+  }
+
+  if (!anySucceeded) {
+    throw new Error(
+      `Nenhum tribunal DATAJUD respondeu para ${numeroProcesso} — não é possível confirmar nem negar a existência do processo.`
+    );
   }
 
   return { found: false, total: 0, hits: [], tribunal: tribunals[0] };

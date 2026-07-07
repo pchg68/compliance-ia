@@ -12,6 +12,7 @@
  * Invariante 3: o que não for confirmado em fonte oficial é "nao_verificavel".
  */
 
+import type { Pool, PoolClient } from "pg";
 import { pool } from "@/lib/db";
 import { datajudSourceLookup } from "@/lib/datajud-client";
 import { lexmlLookup } from "@/lib/lexml-client";
@@ -85,6 +86,7 @@ function pickConnector(canonicalKey: string): Connector | null {
 }
 
 async function logLookup(
+  db: Pool | PoolClient,
   orgId: string | null,
   canonicalKey: string,
   citeType: string,
@@ -94,13 +96,15 @@ async function logLookup(
   httpStatus?: number
 ) {
   try {
-    await pool.query(
+    await db.query(
       `INSERT INTO source_lookup_log (org_id, canonical_key, cite_type, source, outcome, http_status, latency_ms)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [orgId, canonicalKey, citeType, source, outcome, httpStatus ?? null, latencyMs]
     );
   } catch {
     // Log de auditoria não pode derrubar a validação. Silencioso por design.
+    // Também cobre o caso de org_id real sem app.current_org setado (chamador
+    // usou o pool global em vez de ctx.db) — a RLS rejeita, e perdemos só o log.
   }
 }
 
@@ -152,12 +156,13 @@ async function writeCache(canonicalKey: string, result: SourceLookupResult) {
 export async function lookupSource(
   canonicalKey: string,
   citeType: string,
-  orgId: string | null = null
+  orgId: string | null = null,
+  db: Pool | PoolClient = pool
 ): Promise<SourceLookupResult | null> {
   // 1. Cache-first
   const cached = await readCache(canonicalKey);
   if (cached) {
-    await logLookup(orgId, canonicalKey, citeType, cached.source, "cache_hit", 0);
+    await logLookup(db, orgId, canonicalKey, citeType, cached.source, "cache_hit", 0);
     return cached;
   }
 
@@ -166,7 +171,7 @@ export async function lookupSource(
 
   // 2. Circuit breaker
   if (connector.breaker.isOpen) {
-    await logLookup(orgId, canonicalKey, citeType, connector.name, "circuit_open", 0);
+    await logLookup(db, orgId, canonicalKey, citeType, connector.name, "circuit_open", 0);
     return null;
   }
 
@@ -191,15 +196,15 @@ export async function lookupSource(
 
     if (result) {
       await writeCache(canonicalKey, result);
-      await logLookup(orgId, canonicalKey, citeType, connector.name, result.found ? "hit" : "miss", latency);
+      await logLookup(db, orgId, canonicalKey, citeType, connector.name, result.found ? "hit" : "miss", latency);
     } else {
-      await logLookup(orgId, canonicalKey, citeType, connector.name, "miss", latency);
+      await logLookup(db, orgId, canonicalKey, citeType, connector.name, "miss", latency);
     }
     return result;
   } catch {
     controller.abort();
     connector.breaker.recordFailure();
-    await logLookup(orgId, canonicalKey, citeType, connector.name, "error", Date.now() - started);
+    await logLookup(db, orgId, canonicalKey, citeType, connector.name, "error", Date.now() - started);
     return null; // falha de fonte -> nao_verificavel (nunca afirma)
   }
 }
@@ -207,10 +212,16 @@ export async function lookupSource(
 /**
  * Resolve muitas chaves de uma vez: dedup + concorrência limitada.
  * Retorna um Map chave->resultado para reidratar a lista original.
+ *
+ * `db` é opcional: quando chamado num contexto autenticado (citation.validate),
+ * passar ctx.db para que o log de auditoria em source_lookup_log (com RLS)
+ * seja gravado com sucesso — sem isso, o INSERT com org_id real é rejeitado
+ * pela RLS silenciosamente (try/catch em logLookup) e o log se perde.
  */
 export async function lookupMany(
   keys: { canonicalKey: string; citeType: string }[],
-  orgId: string | null = null
+  orgId: string | null = null,
+  db: Pool | PoolClient = pool
 ): Promise<Map<string, SourceLookupResult | null>> {
   const unique = new Map<string, string>(); // canonicalKey -> citeType
   for (const k of keys) {
@@ -223,7 +234,7 @@ export async function lookupMany(
   const resolved = await mapWithConcurrency(
     entries,
     MAX_CONCURRENCY,
-    async ([key, citeType]) => [key, await lookupSource(key, citeType, orgId)] as const
+    async ([key, citeType]) => [key, await lookupSource(key, citeType, orgId, db)] as const
   );
 
   return new Map(resolved);
