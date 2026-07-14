@@ -88,6 +88,23 @@ export const riskRouter = router({
       return { id: result.rows[0].id, approval_status: input.needs_approval ? "pendente" : "aprovado" };
     }),
 
+  /** Fila de aprovação de sócio: checklists pendentes com o contexto da interação. */
+  listPendingChecklists: adminProcedure.query(async ({ ctx }) => {
+    const result = await ctx.db!.query(
+      `SELECT cr.id, cr.interaction_id, cr.items,
+              u.email AS attested_by_email,
+              i.seq, i.provider, i.model, i.task_type, i.risk_class, i.decision,
+              i.prompt_masked, i.created_at
+       FROM checklist_response cr
+       JOIN ai_interaction i ON i.id = cr.interaction_id
+       LEFT JOIN app_user u ON u.id = cr.attested_by
+       WHERE cr.org_id = $1 AND cr.approval_status = 'pendente'
+       ORDER BY i.created_at ASC`,
+      [ctx.orgId]
+    );
+    return result.rows;
+  }),
+
   approveChecklist: adminProcedure
     .input(
       z.object({

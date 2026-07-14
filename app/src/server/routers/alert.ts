@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { protectedProcedure, router } from "../trpc/init";
+import { protectedProcedure, adminProcedure, router } from "../trpc/init";
 
 export const alertRouter = router({
   create: protectedProcedure
@@ -63,7 +63,8 @@ export const alertRouter = router({
       return result.rows;
     }),
 
-  resolve: protectedProcedure
+  // Decisão de compliance (invariante 7): só perfis administrativos resolvem alertas.
+  resolve: adminProcedure
     .input(
       z.object({
         alert_id: z.string().guid(),

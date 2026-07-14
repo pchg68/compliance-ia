@@ -2,11 +2,18 @@
 
 import { Nav, PageWrapper } from "../components/nav";
 import { trpc } from "@/lib/trpc-client";
-import { useOrgId } from "@/lib/auth-context";
+import { useAuth, useOrgId } from "@/lib/auth-context";
+
+const ADMIN_ROLES = ["admin", "compliance", "developer"];
 
 export default function AlertasPage() {
   const orgId = useOrgId();
+  const { me } = useAuth();
+  const isAdmin = ADMIN_ROLES.includes(me?.role ?? "");
   const alerts = trpc.alert.list.useQuery({ org_id: orgId, limit: 50 });
+  const resolve = trpc.alert.resolve.useMutation({
+    onSuccess: () => alerts.refetch(),
+  });
 
   return (
     <>
@@ -55,7 +62,34 @@ export default function AlertasPage() {
                   </div>
                   <p className="font-semibold text-gray-900">{a.title}</p>
                   <p className="text-sm text-gray-500 mt-1">{a.description}</p>
-                  <p className="text-xs text-gray-400 mt-3">{new Date(a.created_at).toLocaleString("pt-BR")}</p>
+                  <div className="flex items-center justify-between mt-3">
+                    <p className="text-xs text-gray-400">{new Date(a.created_at).toLocaleString("pt-BR")}</p>
+                    {isAdmin && a.status === "open" && (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => resolve.mutate({ alert_id: a.id, status: "acknowledged" })}
+                          disabled={resolve.isPending}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-60"
+                        >
+                          Reconhecer
+                        </button>
+                        <button
+                          onClick={() => resolve.mutate({ alert_id: a.id, status: "dismissed" })}
+                          disabled={resolve.isPending}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-60"
+                        >
+                          Descartar
+                        </button>
+                        <button
+                          onClick={() => resolve.mutate({ alert_id: a.id, status: "resolved" })}
+                          disabled={resolve.isPending}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors disabled:opacity-60"
+                        >
+                          Resolver
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

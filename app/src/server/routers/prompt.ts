@@ -1,8 +1,9 @@
 import { z } from "zod/v4";
-import { protectedProcedure, router } from "../trpc/init";
+import { protectedProcedure, adminProcedure, router } from "../trpc/init";
 
 export const promptRouter = router({
-  create: protectedProcedure
+  // Prompts pré-aprovados são curadoria administrativa (invariante 7).
+  create: adminProcedure
     .input(
       z.object({
         title: z.string().min(1),
@@ -97,7 +98,7 @@ export const promptRouter = router({
       };
     }),
 
-  deactivate: protectedProcedure
+  deactivate: adminProcedure
     .input(z.object({ id: z.string().guid() }))
     .mutation(async ({ ctx, input }) => {
       await ctx.db!.query(
