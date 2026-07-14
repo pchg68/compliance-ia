@@ -207,6 +207,22 @@ cast em vez de vazar dados).
   no futuro quiser um gate de middleware de verdade, migrar para `@supabase/ssr` com sessão em
   cookie httpOnly — aí sim o middleware consegue validar antes de renderizar.
 
+**Operações da Fase 1/2 completadas em 2026-07-14** (validado E2E no navegador):
+- `/aprovacoes`: fila de aprovação de sócio (checklists pendentes com contexto, decisão
+  aprovar/ressalva/bloquear). Nav filtrado por perfil (Aprovações/Relatórios ocultos para member),
+  com gate real no backend (adminProcedure, 403 confirmado como member).
+- Alertas com resolução (reconhecer/descartar/resolver) restrita a perfis administrativos.
+- Biblioteca de prompts com criação por admins (detecção automática de variáveis `{{nome}}`).
+- Caminho de bloqueio testado: cliente proíbe IA → vedado → 2 alertas critical → resolvido na UI.
+
+**Sync automatizado de súmulas — avaliado e adiado (2026-07-14):** o SCON do STJ responde 403
+para clientes não-navegador, a busca do LexML tem verificação anti-bot (apenas o resolvedor de
+URN direto funciona — já usado pelo conector), e o portal de dados abertos do STJ (CKAN) NÃO
+publica dataset de súmulas (só espelhos de acórdãos e DATAJUD). O único caminho seria parsear o
+PDF oficial `SumulasSTJ.pdf`, frágil demais para fonte de verdade do invariante 6 sem revisão
+humana. Decisão: a base `sumula_oficial` cresce por cargas revisadas manualmente (como o
+comentário da migration já previa), até existir uma fonte estruturada oficial.
+
 **Ainda pendente:**
 - Mascaramento de PII: só cobre padrões estruturados (CPF/CNPJ/email/telefone/CEP/OAB/processo/RG).
   Nomes próprios e endereços em texto livre não são mascarados — falta NER PT-BR (Fase 2, já
