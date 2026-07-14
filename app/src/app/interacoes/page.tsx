@@ -80,8 +80,8 @@ export default function InteracoesPage() {
                       <td className="px-5 py-3.5">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
                           row.decision === "block" ? "bg-red-100 text-red-700" :
-                          row.decision === "approval" ? "bg-purple-100 text-purple-700" :
-                          row.decision === "masked" ? "bg-blue-100 text-blue-700" :
+                          row.decision === "require_approval" ? "bg-purple-100 text-purple-700" :
+                          row.decision === "allow_with_masking" ? "bg-blue-100 text-blue-700" :
                           "bg-green-100 text-green-700"
                         }`}>{row.decision}</span>
                       </td>

@@ -24,6 +24,26 @@ export interface RiskResult {
   computed_by: "deterministico";
 }
 
+export type RiskClass = "excessivo" | "alto" | "moderado" | "baixo";
+
+/**
+ * Mapeia o tier do motor (taxonomia PL 2338: vedado/alto/moderado/residual) para a
+ * classe gravada em ai_interaction.risk_class e usada pelo dashboard
+ * (excessivo/alto/moderado/baixo). Mapeamento total — sem default que rebaixe risco.
+ */
+export function tierToRiskClass(tier: RiskResult["tier"]): RiskClass {
+  switch (tier) {
+    case "vedado":
+      return "excessivo";
+    case "alto":
+      return "alto";
+    case "moderado":
+      return "moderado";
+    case "residual":
+      return "baixo";
+  }
+}
+
 function matchesCondition(
   signals: RiskSignals,
   when: Record<string, unknown>

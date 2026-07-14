@@ -1,7 +1,8 @@
 import { z } from "zod/v4";
 import { protectedProcedure, router } from "../trpc/init";
 import { maskPii } from "@/lib/pii-masker";
-import { classifyRisk, type RiskSignals, type DecisionRule } from "@/lib/risk-engine";
+import { classifyRisk, tierToRiskClass, type RiskSignals, type DecisionRule } from "@/lib/risk-engine";
+import { getChecklistForTier } from "@/lib/jurisdiction";
 import { evaluateAlerts } from "@/lib/alert-rules";
 
 export const proxyRouter = router({
@@ -31,19 +32,22 @@ export const proxyRouter = router({
 
       // 2. Classificar risco
       const policyResult = await ctx.db!.query(
-        `SELECT rules FROM policy WHERE org_id = $1 AND active = true ORDER BY version DESC LIMIT 1`,
+        `SELECT id, rules, jurisdiction FROM policy WHERE org_id = $1 AND active = true ORDER BY version DESC LIMIT 1`,
         [orgId]
       );
       const decisionTable: DecisionRule[] =
         policyResult.rows.length > 0
           ? (policyResult.rows[0].rules as { decision_table: DecisionRule[] }).decision_table ?? []
           : [];
+      const policyId: string | null = policyResult.rows[0]?.id ?? null;
+      const jurisdictionCode: string | undefined = policyResult.rows[0]?.jurisdiction;
 
       const riskSignals: RiskSignals = {
         task_type: input.task_type,
         ...input.signals,
       };
       const risk = classifyRisk(riskSignals, decisionTable);
+      const checklistItems = getChecklistForTier(jurisdictionCode, risk.tier);
 
       // 3. Decisão de gate
       if (risk.decision === "block") {
@@ -68,6 +72,7 @@ export const proxyRouter = router({
           blocked: true,
           reason: "Interação bloqueada pelo motor de risco",
           risk_tier: risk.tier,
+          risk_class: tierToRiskClass(risk.tier),
           decision: risk.decision,
           pii_masked: maskResult.matches.length,
           alerts_generated: alerts.length,
@@ -96,6 +101,7 @@ export const proxyRouter = router({
       return {
         blocked: false,
         risk_tier: risk.tier,
+        risk_class: tierToRiskClass(risk.tier),
         decision: risk.decision,
         prompt_masked: maskResult.masked,
         pii_masked: maskResult.matches.length,
@@ -103,6 +109,9 @@ export const proxyRouter = router({
         controls: risk.controls,
         alerts_generated: alerts.length,
         requires_approval: risk.decision === "require_approval",
+        // Necessários para o fluxo de captura (interaction.capture + checklist):
+        policy_id: policyId,
+        checklist_items: checklistItems,
       };
     }),
 

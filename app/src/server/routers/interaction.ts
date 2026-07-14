@@ -19,7 +19,8 @@ const captureInput = z.object({
   response_original: z.string().nullable(),
   response_masked: z.string().nullable(),
   policy_id: z.string().guid(),
-  decision: z.enum(["allow", "masked", "approval", "block"]),
+  // Mesma taxonomia da CHECK constraint em ai_interaction.decision e do risk-engine.
+  decision: z.enum(["allow", "allow_with_masking", "require_approval", "block"]),
   pii_technique: z.record(z.string(), z.string()).nullable().optional(),
   injection_flags: z.any().nullable().optional(),
   checklist_passed: z.boolean(),

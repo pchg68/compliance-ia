@@ -1,5 +1,5 @@
 import type { DecisionRule } from "./risk-engine";
-import type { ChecklistItem } from "./checklist";
+import { getChecklistItems, type ChecklistItem } from "./checklist";
 
 export interface JurisdictionProfile {
   code: string;
@@ -142,4 +142,27 @@ export function getJurisdiction(code: string): JurisdictionProfile {
 
 export function listJurisdictions(): { code: string; label: string }[] {
   return Object.values(JURISDICTIONS).map((j) => ({ code: j.code, label: j.label }));
+}
+
+/**
+ * Checklist ético do tier segundo a jurisdição ativa da política.
+ * Sem jurisdição conhecida, cai no checklist BR fixo (default conservador).
+ */
+export function getChecklistForTier(
+  jurisdictionCode: string | undefined,
+  tier: "vedado" | "alto" | "moderado" | "residual"
+): ChecklistItem[] {
+  if (!jurisdictionCode) {
+    // import tardio evitaria ciclo, mas checklist.ts não importa este módulo — seguro.
+    return getChecklistItems(tier);
+  }
+  const profile = getJurisdiction(jurisdictionCode);
+  switch (tier) {
+    case "alto":
+      return profile.checklist_alto;
+    case "moderado":
+      return profile.checklist_moderado;
+    default:
+      return [];
+  }
 }

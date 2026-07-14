@@ -77,11 +77,15 @@ eles, parar e perguntar.
 
 ---
 
-## Ordem de construção (fase atual: 1)
+## Ordem de construção (fase atual: 1 concluída de ponta a ponta em dev)
 
-- [ ] **Fase 1 (MVP vendável):** esquema + RLS + append-only (trigger) → captura assíncrona de
-      interações → trilha imutável (cadeia de hash linear) → biblioteca de prompts (reuso do
-      PromptJur) → checklist ético (eixos OAB 001/2024) → relatório de conformidade exportável.
+- [x] **Fase 1 (MVP vendável):** esquema + RLS + append-only (trigger) → captura de interações
+      (página `/registrar`: gate de risco → checklist ético → trilha imutável → validação de
+      citações) → trilha imutável (cadeia de hash linear) → biblioteca de prompts → checklist
+      ético (eixos OAB 001/2024) → relatório de conformidade exportável. Validado E2E em
+      2026-07-14: 2 interações reais registradas via UI, cadeia íntegra, checklist de risco alto
+      pendente de aprovação, 3 citações confirmadas contra fontes oficiais (LexML real + base
+      local de súmulas).
 - [ ] **Fase 2:** mascaramento de PII na borda (regex estruturado → NER PT-BR) + classificação de
       risco + alertas.
 - [ ] **Fase 3:** validador de citações (DATAJUD/STF/STJ/LexML/Planalto) + proxy inline +

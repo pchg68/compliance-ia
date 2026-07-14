@@ -1,8 +1,7 @@
 import { z } from "zod/v4";
 import { protectedProcedure, adminProcedure, router } from "../trpc/init";
 import { classifyRisk, type RiskSignals, type DecisionRule } from "@/lib/risk-engine";
-import { getChecklistItems } from "@/lib/checklist";
-import { getJurisdiction } from "@/lib/jurisdiction";
+import { getChecklistForTier } from "@/lib/jurisdiction";
 
 export const riskRouter = router({
   assess: protectedProcedure
@@ -34,15 +33,9 @@ export const riskRouter = router({
 
       const result = classifyRisk(input.signals as RiskSignals, decisionTable);
 
-      // Checklist ético deve seguir a jurisdição ativa da política, não um default fixo BR.
+      // Checklist ético segue a jurisdição ativa da política, não um default fixo BR.
       const jurisdictionCode = policyResult.rows[0]?.jurisdiction as string | undefined;
-      const checklistItems = jurisdictionCode
-        ? (result.tier === "alto"
-            ? getJurisdiction(jurisdictionCode).checklist_alto
-            : result.tier === "moderado"
-              ? getJurisdiction(jurisdictionCode).checklist_moderado
-              : [])
-        : getChecklistItems(result.tier);
+      const checklistItems = getChecklistForTier(jurisdictionCode, result.tier);
 
       await ctx.db!.query(
         `INSERT INTO risk_assessment (interaction_id, org_id, signals, tier, matched_rule, decision, controls_applied, computed_by)
