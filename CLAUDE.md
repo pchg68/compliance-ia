@@ -223,13 +223,25 @@ PDF oficial `SumulasSTJ.pdf`, frágil demais para fonte de verdade do invariante
 humana. Decisão: a base `sumula_oficial` cresce por cargas revisadas manualmente (como o
 comentário da migration já previa), até existir uma fonte estruturada oficial.
 
+**Juiz semântico IMPLEMENTADO (2026-07-14)** — eixo 2 (conteúdo) do validador de citações:
+- `src/lib/semantic-judge.ts`: chamada à API da Anthropic (SDK oficial, structured outputs com
+  schema JSON fechado `consistente|divergente|insuficiente`). O juiz recebe SÓ o texto oficial
+  recuperado + a tese alegada (janela de ±300 chars ao redor da citação, via `start`/`end` do
+  extractor) — nunca conhecimento próprio do modelo. Fail-closed: sem chave, sem créditos, erro
+  de rede, refusal ou resposta fora do schema → `insuficiente`, que mantém a confirmação por
+  existência (nunca rebaixa nem eleva por inferência). `divergente` = "número certo, tese errada"
+  (a classe de alucinação mais perigosa da spec). Modelo padrão `claude-opus-4-8`, configurável
+  via `CITATION_JUDGE_MODEL`. Sem `ANTHROPIC_API_KEY`, o eixo é pulado (comportamento anterior).
+- Testado com juiz injetado (integração no validador) e SDK mockado (wrapper fail-closed) —
+  `tests/semantic-judge.test.ts`. **E2E com a API real pendente: a conta está sem créditos**
+  (Plans & Billing no console.anthropic.com); quando houver créditos, validar na página
+  /citacoes com uma tese deliberadamente contrária a uma súmula da base local.
+
 **Ainda pendente:**
 - Mascaramento de PII: só cobre padrões estruturados (CPF/CNPJ/email/telefone/CEP/OAB/processo/RG).
   Nomes próprios e endereços em texto livre não são mascarados — falta NER PT-BR (Fase 2, já
-  prevista no desenho técnico).
-- Validador de citações: eixo de conteúdo (juiz semântico comparando tese vs. ementa) ainda não
-  existe — qualquer citação com conteúdo não vazio é considerada `confirmada` sem checar se a
-  tese bate. É a lacuna funcional mais importante frente ao desenho técnico (Fase 3).
+  prevista no desenho técnico). Com a ANTHROPIC_API_KEY agora configurada, pode ser implementado
+  com o mesmo padrão fail-closed do juiz semântico quando houver créditos para validar.
 - Cifragem real do `token_map` (envelope encryption via KMS) ainda não existe — o campo
   `ciphertext` é aceito como o chamador mandar. Fase 2+/KMS, conforme já previsto no CLAUDE.md.
 - `token_map`/`ai_interaction.capture` ainda não tem nenhum chamador real (edge/gateway); ao

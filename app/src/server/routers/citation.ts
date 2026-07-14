@@ -4,6 +4,13 @@ import { publicProcedure, protectedProcedure, router } from "../trpc/init";
 import { extractCitations } from "@/lib/citation-extractor";
 import { validateAllCitations, type SourceLookupFn, type ValidationResult } from "@/lib/citation-validator";
 import { lookupMany } from "@/lib/source-registry";
+import { isJudgeEnabled, judgeCitation } from "@/lib/semantic-judge";
+
+/** Eixo 2 (conteúdo) só roda com ANTHROPIC_API_KEY configurada; sem ela,
+ *  o comportamento é o anterior (confirmação por existência). */
+function judgeOpts(fullText: string) {
+  return isJudgeEnabled() ? { judge: judgeCitation, fullText } : {};
+}
 
 /**
  * Constrói um SourceLookupFn que lê de um mapa já resolvido (prefetch).
@@ -77,7 +84,7 @@ export const citationRouter = router({
         citations.map((c) => ({ canonicalKey: c.canonical_key ?? "", citeType: c.cite_type })),
         input.org_id ?? null
       );
-      const results = await validateAllCitations(citations, lookupFromMap(map));
+      const results = await validateAllCitations(citations, lookupFromMap(map), judgeOpts(input.text));
       return summarize(results);
     }),
 
@@ -96,7 +103,11 @@ export const citationRouter = router({
         ctx.orgId,
         ctx.db!
       );
-      const results = await validateAllCitations(citations, lookupFromMap(map));
+      const results = await validateAllCitations(
+        citations,
+        lookupFromMap(map),
+        judgeOpts(input.response_text)
+      );
       await persistChecks(ctx.db!, input.interaction_id, ctx.orgId, results);
       return summarize(results);
     }),

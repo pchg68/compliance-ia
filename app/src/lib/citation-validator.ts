@@ -1,4 +1,5 @@
 import type { ExtractedCitation } from "./citation-extractor";
+import type { SemanticJudgeFn } from "./semantic-judge";
 
 export interface ValidationResult {
   raw_text: string;
@@ -24,9 +25,30 @@ export type SourceLookupFn = (
   citeType: string
 ) => Promise<SourceLookupResult | null>;
 
+export interface ValidateOptions {
+  /**
+   * Juiz semântico (eixo 2 — conteúdo): compara a tese alegada no documento
+   * com o texto oficial recuperado. Opcional: sem juiz, "confirmada" atesta
+   * apenas EXISTÊNCIA na fonte oficial (comportamento anterior).
+   */
+  judge?: SemanticJudgeFn;
+  /** Texto completo do documento — usado para extrair a tese ao redor da citação. */
+  fullText?: string;
+}
+
+/** Janela de contexto ao redor da citação — a "tese alegada" que o juiz avalia. */
+const CLAIM_CONTEXT_WINDOW = 300;
+
+function extractClaimContext(citation: ExtractedCitation, fullText: string): string {
+  const start = Math.max(0, citation.start - CLAIM_CONTEXT_WINDOW);
+  const end = Math.min(fullText.length, citation.end + CLAIM_CONTEXT_WINDOW);
+  return fullText.slice(start, end).trim();
+}
+
 export async function validateCitation(
   citation: ExtractedCitation,
-  lookupSource: SourceLookupFn
+  lookupSource: SourceLookupFn,
+  opts: ValidateOptions = {}
 ): Promise<ValidationResult> {
   if (!citation.canonical_key) {
     return {
@@ -98,8 +120,51 @@ export async function validateCitation(
     };
   }
 
-  // Conteúdo disponível — marcar como confirmada
-  // (em produção, aqui entraria o juiz semântico para comparar tese × ementa)
+  // Eixo 2: Conteúdo — juiz semântico compara tese alegada × texto oficial.
+  // O juiz recebe SÓ o texto oficial recuperado (invariante 3) e responde em
+  // esquema fechado. "insuficiente" (ou juiz ausente/falho) mantém a
+  // confirmação por EXISTÊNCIA — nunca rebaixa nem eleva por inferência.
+  if (opts.judge && opts.fullText) {
+    const claimContext = extractClaimContext(citation, opts.fullText);
+    // Só julga se há tese alegada além da própria referência (contexto maior
+    // que a citação em si) — uma citação "solta" não tem o que comparar.
+    if (claimContext.length > citation.raw_text.length + 20) {
+      const verdict = await opts.judge({
+        citation: citation.raw_text,
+        claimContext,
+        officialText: result.content,
+      });
+
+      if (verdict.verdict === "divergente") {
+        return {
+          raw_text: citation.raw_text,
+          cite_type: citation.cite_type,
+          canonical_key: citation.canonical_key,
+          status: "divergente",
+          source: result.source,
+          source_ref: result.source_ref,
+          evidence_excerpt: result.content,
+          confidence: 0.85,
+        };
+      }
+
+      if (verdict.verdict === "consistente") {
+        return {
+          raw_text: citation.raw_text,
+          cite_type: citation.cite_type,
+          canonical_key: citation.canonical_key,
+          status: "confirmada",
+          source: result.source,
+          source_ref: result.source_ref,
+          evidence_excerpt: result.content,
+          confidence: 0.98,
+        };
+      }
+      // "insuficiente" cai no retorno padrão abaixo (confirmada por existência).
+    }
+  }
+
+  // Confirmada por existência na fonte oficial (eixo 1 + vigência).
   return {
     raw_text: citation.raw_text,
     cite_type: citation.cite_type,
@@ -114,7 +179,8 @@ export async function validateCitation(
 
 export async function validateAllCitations(
   citations: ExtractedCitation[],
-  lookupSource: SourceLookupFn
+  lookupSource: SourceLookupFn,
+  opts: ValidateOptions = {}
 ): Promise<ValidationResult[]> {
   const seen = new Set<string>();
   const deduped = citations.filter((c) => {
@@ -124,5 +190,5 @@ export async function validateAllCitations(
     return true;
   });
 
-  return Promise.all(deduped.map((c) => validateCitation(c, lookupSource)));
+  return Promise.all(deduped.map((c) => validateCitation(c, lookupSource, opts)));
 }
