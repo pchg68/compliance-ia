@@ -237,11 +237,22 @@ comentário da migration já previa), até existir uma fonte estruturada oficial
   (Plans & Billing no console.anthropic.com); quando houver créditos, validar na página
   /citacoes com uma tese deliberadamente contrária a uma súmula da base local.
 
+**NER de PII IMPLEMENTADO (2026-07-14)** — nomes e endereços em texto livre (Fase 2):
+- `src/lib/pii-ner.ts`: `nerDetect` (Anthropic SDK, schema fechado NOME|ENDERECO, com guarda
+  anti-invenção — só entidades literalmente presentes no texto) + `maskPiiWithNer` (regex
+  estruturado primeiro, NER sobre o texto já mascarado depois; entidades maiores têm precedência;
+  todas as ocorrências são substituídas e entram no tokenMap). Fail-closed: NER indisponível
+  (sem chave/créditos/erro) → só regex, com flag `ner_applied: false` — o fluxo NUNCA é
+  bloqueado pela indisponibilidade do LLM. Integrado em `masker.mask` e `proxy.forward`;
+  a checagem server-side de `interaction.capture` permanece deliberadamente regex-only
+  (determinística — indisponibilidade de LLM não pode rejeitar captura legítima).
+  Modelo via `PII_NER_MODEL` (padrão `claude-opus-4-8`).
+- Testes em `tests/pii-ner.test.ts` (composição, precedência, todas as ocorrências,
+  fail-closed, anti-invenção). **E2E real pendente de créditos na conta Anthropic.**
+
 **Ainda pendente:**
-- Mascaramento de PII: só cobre padrões estruturados (CPF/CNPJ/email/telefone/CEP/OAB/processo/RG).
-  Nomes próprios e endereços em texto livre não são mascarados — falta NER PT-BR (Fase 2, já
-  prevista no desenho técnico). Com a ANTHROPIC_API_KEY agora configurada, pode ser implementado
-  com o mesmo padrão fail-closed do juiz semântico quando houver créditos para validar.
+- Validar juiz semântico + NER de PII contra a API real assim que a conta Anthropic tiver
+  créditos (Plans & Billing) — a chave já está configurada e autentica; o bloqueio é só saldo.
 - Cifragem real do `token_map` (envelope encryption via KMS) ainda não existe — o campo
   `ciphertext` é aceito como o chamador mandar. Fase 2+/KMS, conforme já previsto no CLAUDE.md.
 - `token_map`/`ai_interaction.capture` ainda não tem nenhum chamador real (edge/gateway); ao

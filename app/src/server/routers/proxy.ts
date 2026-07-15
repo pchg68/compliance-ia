@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
 import { protectedProcedure, router } from "../trpc/init";
-import { maskPii } from "@/lib/pii-masker";
+import { maskPiiWithNer } from "@/lib/pii-ner";
 import { classifyRisk, tierToRiskClass, type RiskSignals, type DecisionRule } from "@/lib/risk-engine";
 import { getChecklistForTier } from "@/lib/jurisdiction";
 import { evaluateAlerts } from "@/lib/alert-rules";
@@ -27,8 +27,8 @@ export const proxyRouter = router({
       const orgId = ctx.orgId;
       const startTime = Date.now();
 
-      // 1. Mascarar PII
-      const maskResult = maskPii(input.prompt);
+      // 1. Mascarar PII (regex estruturado + NER de nomes/endereços quando disponível)
+      const maskResult = await maskPiiWithNer(input.prompt);
 
       // 2. Classificar risco
       const policyResult = await ctx.db!.query(

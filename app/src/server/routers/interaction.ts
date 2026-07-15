@@ -33,6 +33,8 @@ export const interactionRouter = router({
   capture: protectedProcedure.input(captureInput).mutation(async ({ ctx, input }) => {
     // Fail-closed: o "masked" que chega ao núcleo não pode conter PII detectável.
     // O mascaramento é responsabilidade da borda; aqui apenas verificamos o resultado.
+    // A checagem é deliberadamente regex-only (determinística e barata): a
+    // indisponibilidade do NER (LLM) nunca pode rejeitar uma captura legítima.
     if (maskPii(input.prompt_masked).matches.length > 0) {
       throw new TRPCError({
         code: "BAD_REQUEST",
