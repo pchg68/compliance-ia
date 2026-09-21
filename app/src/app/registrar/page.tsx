@@ -123,8 +123,8 @@ export default function RegistrarPage() {
       autonomy,
       provider_posture: providerPosture,
       client_constraints: clientProibeIa ? ["proibe_ia"] : [],
-      injection_flags: [],
-    } as const;
+      injection_flags: [] as string[],
+    };
   }
 
   function toggleSensitivity(value: string) {

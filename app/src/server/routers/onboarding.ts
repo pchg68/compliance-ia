@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { publicProcedure, protectedProcedure, adminProcedure, router } from "../trpc/init";
+import { publicProcedure, adminProcedure, router } from "../trpc/init";
 import { bootstrapPool } from "@/lib/db";
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../trpc/init";

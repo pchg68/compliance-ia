@@ -33,8 +33,19 @@ jobs:
       - name: Install deps
         run: npm ci
 
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase
+        run: supabase start
+
       - name: Lint
         run: npm run lint --if-present
+
+      - name: Build
+        run: npm run build
 
       - name: Test
         run: npm test -- --coverage --ci
@@ -47,3 +58,7 @@ jobs:
           fail_ci_if_error: true
           verbose: true
           directory: app/coverage
+
+      - name: Stop local Supabase
+        if: always()
+        run: supabase stop
