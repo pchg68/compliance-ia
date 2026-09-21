@@ -1,30 +1,51 @@
 import { z } from "zod/v4";
 import { TRPCError } from "@trpc/server";
+import { createHash } from "crypto";
 import { protectedProcedure, router } from "../trpc/init";
 import {
   computeRowHash,
-  computeContentHash,
   CURRENT_HASH_SCHEMA_VERSION,
   type HashableInteraction,
 } from "@/lib/hash";
 import { maskPii } from "@/lib/pii-masker";
+import { classifyRisk, tierToRiskClass, type DecisionRule, type RiskSignals } from "@/lib/risk-engine";
+
+const validatedCitationSchema = z.object({
+  raw_text: z.string(),
+  cite_type: z.string(),
+  canonical_key: z.string().nullable(),
+  status: z.enum(["confirmada", "divergente", "desatualizada", "nao_localizada", "nao_verificavel"]),
+  source: z.string().nullable(),
+  source_ref: z.string().nullable(),
+  evidence_excerpt: z.string().nullable(),
+  confidence: z.number().nullable(),
+});
 
 const captureInput = z.object({
   provider: z.string(),
   model: z.string(),
   task_type: z.string(),
   risk_class: z.enum(["excessivo", "alto", "moderado", "baixo"]),
-  prompt_original: z.string(),
   prompt_masked: z.string(),
-  response_original: z.string().nullable(),
   response_masked: z.string().nullable(),
+  prompt_orig_hash: z.string().regex(/^[0-9a-f]{64}$/i).optional(),
+  response_orig_hash: z.string().regex(/^[0-9a-f]{64}$/i).nullable().optional(),
   policy_id: z.string().guid(),
   // Mesma taxonomia da CHECK constraint em ai_interaction.decision e do risk-engine.
   decision: z.enum(["allow", "allow_with_masking", "require_approval", "block"]),
   pii_technique: z.record(z.string(), z.string()).nullable().optional(),
   injection_flags: z.any().nullable().optional(),
   checklist_passed: z.boolean(),
-  citations: z.any().nullable().optional(),
+  signals: z.object({
+    task_type: z.string(),
+    data_sensitivity: z.array(z.string()),
+    legal_effect: z.boolean(),
+    autonomy: z.enum(["com_revisao", "sem_revisao"]),
+    provider_posture: z.enum(["aprovado", "nao_aprovado"]),
+    client_constraints: z.array(z.string()),
+    injection_flags: z.array(z.string()),
+  }).nullable().optional(),
+  citations: z.array(validatedCitationSchema).nullable().optional(),
   token_map_ciphertext: z.string().nullable().optional(),
   token_map_wrapped_key: z.string().nullable().optional(),
 });
@@ -51,12 +72,9 @@ export const interactionRouter = router({
     const orgId = ctx.orgId;
     const db = ctx.db!;
 
-    // Advisory lock por org para serializar a cadeia de hash. Transação é a que
-    // já foi aberta pelo middleware protectedProcedure (withOrgContext) — não
-    // abrimos uma nova aqui, só reaproveitamos a mesma conexão/transação.
-    const lockKey = Buffer.from(orgId.replace(/-/g, ""), "hex");
-    const lockId = lockKey.readInt32BE(0);
-    await db.query("SELECT pg_advisory_xact_lock($1)", [lockId]);
+    // Advisory lock por org para serializar a cadeia de hash sem depender só
+    // dos primeiros 32 bits do UUID do tenant.
+    await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [orgId]);
 
     // Buscar último seq e prev_hash do tenant
     const lastRow = await db.query(
@@ -69,13 +87,43 @@ export const interactionRouter = router({
     const prevHash: Buffer | null =
       lastRow.rows.length > 0 ? lastRow.rows[0].row_hash : null;
 
-    const salt = orgId;
-    const promptOrigHash = computeContentHash(input.prompt_original, salt);
-    const responseOrigHash = input.response_original
-      ? computeContentHash(input.response_original, salt)
+    const promptOrigHash = createHash("sha256").update(input.prompt_masked).digest();
+    const responseOrigHash = input.response_masked
+      ? createHash("sha256").update(input.response_masked).digest()
       : null;
 
     const now = new Date().toISOString();
+    const sanitizedCitations = input.citations?.map((citation) => ({
+      raw_text: maskPii(citation.raw_text).masked,
+      cite_type: citation.cite_type,
+      canonical_key: citation.canonical_key ? maskPii(citation.canonical_key).masked : null,
+      status: citation.status,
+      source: citation.source ? maskPii(citation.source).masked : null,
+      source_ref: citation.source_ref ? maskPii(citation.source_ref).masked : null,
+      evidence_excerpt: citation.evidence_excerpt ? maskPii(citation.evidence_excerpt).masked : null,
+      confidence: citation.confidence,
+    })) ?? null;
+    let computedAssessment: ReturnType<typeof classifyRisk> | null = null;
+
+    if (input.signals) {
+      const policyResult = await db.query(
+        `SELECT rules FROM policy WHERE org_id = $1 AND active = true ORDER BY version DESC LIMIT 1`,
+        [orgId]
+      );
+      const decisionTable: DecisionRule[] =
+        policyResult.rows.length > 0
+          ? (policyResult.rows[0].rules as { decision_table?: DecisionRule[] }).decision_table ?? []
+          : [];
+      const assessment = classifyRisk(input.signals as RiskSignals, decisionTable);
+      computedAssessment = assessment;
+
+      if (tierToRiskClass(assessment.tier) !== input.risk_class || assessment.decision !== input.decision) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "risk_class/decision divergentes da avaliação server-side.",
+        });
+      }
+    }
 
     const hashable: HashableInteraction = {
       org_id: orgId,
@@ -91,7 +139,7 @@ export const interactionRouter = router({
       response_orig_hash: responseOrigHash?.toString("hex") ?? null,
       decision: input.decision,
       checklist_passed: input.checklist_passed,
-      citations: input.citations ?? null,
+      citations: sanitizedCitations,
       created_at: now,
       hash_schema_version: CURRENT_HASH_SCHEMA_VERSION,
     };
@@ -119,12 +167,29 @@ export const interactionRouter = router({
         input.pii_technique ? JSON.stringify(input.pii_technique) : null,
         input.injection_flags ? JSON.stringify(input.injection_flags) : null,
         input.checklist_passed,
-        input.citations ? JSON.stringify(input.citations) : null,
+        sanitizedCitations ? JSON.stringify(sanitizedCitations) : null,
         prevHash, rowHash, now, CURRENT_HASH_SCHEMA_VERSION,
       ]
     );
 
     const interactionId = result.rows[0].id;
+
+    if (input.signals && computedAssessment) {
+      await db.query(
+        `INSERT INTO risk_assessment (interaction_id, org_id, signals, tier, matched_rule, decision, controls_applied, computed_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          interactionId,
+          orgId,
+          JSON.stringify(input.signals),
+          computedAssessment.tier,
+          computedAssessment.matched_rule,
+          computedAssessment.decision,
+          JSON.stringify(computedAssessment.controls),
+          computedAssessment.computed_by,
+        ]
+      );
+    }
 
     if (input.token_map_ciphertext && input.token_map_wrapped_key) {
       await db.query(
@@ -136,6 +201,36 @@ export const interactionRouter = router({
           Buffer.from(input.token_map_ciphertext, "base64"),
           Buffer.from(input.token_map_wrapped_key, "base64"),
         ]
+      );
+    }
+
+    if (sanitizedCitations && sanitizedCitations.length > 0) {
+      const cols = 10;
+      const values: unknown[] = [];
+      const tuples: string[] = [];
+      sanitizedCitations.forEach((citation, i) => {
+        const b = i * cols;
+        tuples.push(
+          `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10})`
+        );
+        values.push(
+          interactionId,
+          orgId,
+          citation.raw_text,
+          citation.cite_type,
+          citation.canonical_key,
+          citation.status,
+          citation.source,
+          citation.source_ref,
+          citation.evidence_excerpt,
+          citation.confidence
+        );
+      });
+      await db.query(
+        `INSERT INTO citation_check
+          (interaction_id, org_id, raw_text, cite_type, canonical_key, status, source, source_ref, evidence_excerpt, confidence)
+         VALUES ${tuples.join(",")}`,
+        values
       );
     }
 

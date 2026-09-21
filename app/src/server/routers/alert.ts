@@ -28,7 +28,7 @@ export const alertRouter = router({
       return { id: result.rows[0].id };
     }),
 
-  list: protectedProcedure
+  list: adminProcedure
     .input(
       z.object({
         org_id: z.string().guid().optional(),
@@ -80,7 +80,7 @@ export const alertRouter = router({
       return { status: input.status };
     }),
 
-  summary: protectedProcedure
+  summary: adminProcedure
     .input(z.object({ org_id: z.string().guid().optional() }).optional())
     .query(async ({ ctx }) => {
       const result = await ctx.db!.query(

@@ -7,6 +7,7 @@ import { pool } from "@/lib/db";
 const EMPTY_CONTEXT: Context = {
   orgId: null,
   userId: null,
+  authUserId: null,
   role: null,
   email: null,
 };
@@ -25,21 +26,23 @@ async function createContext(req: Request): Promise<Context> {
     return EMPTY_CONTEXT;
   }
 
-  // Resolve org_id + role a partir do email autenticado
+  // Resolve org_id + role a partir do vínculo auth_id; se ainda não houver
+  // vínculo, faz claim seguro de um convite único pendente por e-mail.
   const result = await pool.query(
-    `SELECT user_id, org_id, role, email FROM resolve_app_user($1)`,
-    [data.user.email]
+    `SELECT user_id, org_id, role, email FROM resolve_app_user($1, $2)`,
+    [data.user.id, data.user.email]
   );
 
   if (result.rows.length === 0) {
     // Usuário autenticado mas sem vínculo a um escritório
-    return { ...EMPTY_CONTEXT, email: data.user.email };
+    return { ...EMPTY_CONTEXT, email: data.user.email, authUserId: data.user.id };
   }
 
   const row = result.rows[0];
   return {
     orgId: row.org_id,
     userId: row.user_id,
+    authUserId: data.user.id,
     role: row.role,
     email: row.email,
   };

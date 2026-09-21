@@ -76,13 +76,14 @@ export const citationRouter = router({
     }),
 
   /** Valida texto avulso (página do validador) sem persistir em trilha. */
-  validateText: publicProcedure
-    .input(z.object({ text: z.string().max(200_000), org_id: z.string().guid().nullable().optional() }))
-    .mutation(async ({ input }) => {
+  validateText: protectedProcedure
+    .input(z.object({ text: z.string().max(200_000) }))
+    .mutation(async ({ ctx, input }) => {
       const citations = extractCitations(input.text);
       const map = await lookupMany(
         citations.map((c) => ({ canonicalKey: c.canonical_key ?? "", citeType: c.cite_type })),
-        input.org_id ?? null
+        ctx.orgId,
+        ctx.db!
       );
       const results = await validateAllCitations(citations, lookupFromMap(map), judgeOpts(input.text));
       return summarize(results);

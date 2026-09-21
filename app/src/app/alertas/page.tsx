@@ -10,7 +10,7 @@ export default function AlertasPage() {
   const orgId = useOrgId();
   const { me } = useAuth();
   const isAdmin = ADMIN_ROLES.includes(me?.role ?? "");
-  const alerts = trpc.alert.list.useQuery({ org_id: orgId, limit: 50 });
+  const alerts = trpc.alert.list.useQuery({ org_id: orgId, limit: 50 }, { enabled: isAdmin });
   const resolve = trpc.alert.resolve.useMutation({
     onSuccess: () => alerts.refetch(),
   });
@@ -19,6 +19,18 @@ export default function AlertasPage() {
     <>
       <Nav />
       <PageWrapper>
+        {!isAdmin ? (
+          <div className="min-h-screen flex items-center justify-center px-8">
+            <div className="bg-white rounded-xl border border-gray-100 p-10 text-center shadow-sm max-w-md">
+              <h2 className="font-semibold text-gray-900 mb-2">Acesso restrito</h2>
+              <p className="text-sm text-gray-500">
+                A central de alertas é visível apenas para perfis administrativos
+                (admin, compliance ou desenvolvedor).
+              </p>
+            </div>
+          </div>
+        ) : (
+        <>
         <header className="bg-white border-b border-gray-100 px-8 py-6">
           <h1 className="text-2xl font-bold text-gray-900">Alertas</h1>
           <p className="text-sm text-gray-500 mt-1">Notificações de segurança, risco e conformidade</p>
@@ -105,6 +117,8 @@ export default function AlertasPage() {
             </div>
           ) : null}
         </main>
+        </>
+        )}
       </PageWrapper>
     </>
   );

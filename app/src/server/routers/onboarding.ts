@@ -1,15 +1,15 @@
 import { z } from "zod/v4";
-import { publicProcedure, protectedProcedure, adminProcedure, router } from "../trpc/init";
+import { publicProcedure, adminProcedure, router } from "../trpc/init";
 import { bootstrapPool } from "@/lib/db";
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../trpc/init";
 
 // Procedure que exige auth Supabase mas tolera ausência de org (para onboarding)
 const authOnlyProcedure = publicProcedure.use(({ ctx, next }) => {
-  if (!ctx.email) {
+  if (!ctx.email || !ctx.authUserId) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Autenticação necessária." });
   }
-  return next({ ctx: ctx as Context & { email: string } });
+  return next({ ctx: ctx as Context & { email: string; authUserId: string } });
 });
 
 export const onboardingRouter = router({
@@ -50,8 +50,8 @@ export const onboardingRouter = router({
 
         // Cria o usuário como admin
         const userResult = await client.query(
-          `INSERT INTO app_user (org_id, email, role) VALUES ($1, $2, 'admin') RETURNING id`,
-          [orgId, ctx.email]
+          `INSERT INTO app_user (org_id, email, auth_id, role) VALUES ($1, $2, $3, 'admin') RETURNING id`,
+          [orgId, ctx.email, ctx.authUserId]
         );
         const userId = userResult.rows[0].id as string;
 
@@ -84,6 +84,20 @@ export const onboardingRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const globalExisting = await bootstrapPool.query(
+        `SELECT org_id FROM app_user WHERE email = $1 LIMIT 1`,
+        [input.email]
+      );
+      if (
+        globalExisting.rows.length > 0 &&
+        globalExisting.rows[0].org_id !== ctx.orgId
+      ) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Este e-mail já está vinculado a outro escritório.",
+        });
+      }
+
       const existing = await ctx.db!.query(
         `SELECT id FROM app_user WHERE org_id = $1 AND email = $2`,
         [ctx.orgId, input.email]
@@ -101,7 +115,7 @@ export const onboardingRouter = router({
     }),
 
   // Lista usuários da organização
-  listUsers: protectedProcedure.query(async ({ ctx }) => {
+  listUsers: adminProcedure.query(async ({ ctx }) => {
     const result = await ctx.db!.query(
       `SELECT id, email, role, created_at FROM app_user WHERE org_id = $1 ORDER BY created_at`,
       [ctx.orgId]
