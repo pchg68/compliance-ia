@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { Nav, PageWrapper } from "../components/nav";
 import { trpc } from "@/lib/trpc-client";
-import { useOrgId } from "@/lib/auth-context";
 import { prepareMaskedEvidence } from "@/lib/client-evidence";
 
 /**
@@ -87,7 +86,6 @@ const EIXO_LABEL: Record<string, string> = {
 };
 
 export default function RegistrarPage() {
-  const orgId = useOrgId();
   const [step, setStep] = useState<"form" | "blocked" | "checklist" | "done">("form");
 
   // Formulário
@@ -135,7 +133,7 @@ export default function RegistrarPage() {
   async function avaliarRisco() {
     setFlowError(null);
     try {
-      const promptEvidence = await prepareMaskedEvidence(prompt, orgId);
+      const promptEvidence = await prepareMaskedEvidence(prompt);
       const result = (await forward.mutateAsync({
         provider,
         model: model.trim() || "desconhecido",
@@ -159,7 +157,10 @@ export default function RegistrarPage() {
           response_orig_hash: null,
           policy_id: result.policy_id!,
           decision: "block",
-          pii_technique: promptEvidence.techniques,
+          pii_technique: {
+            ...promptEvidence.techniques,
+            prompt_commitment_nonce: promptEvidence.commitment_nonce,
+          },
           checklist_passed: false,
           signals: currentSignals(),
           citations: null,
@@ -190,12 +191,12 @@ export default function RegistrarPage() {
     setFlowError(null);
     setRegistering(true);
     try {
-      const promptEvidence = await prepareMaskedEvidence(prompt, orgId);
+      const promptEvidence = await prepareMaskedEvidence(prompt);
       const responseEvidence = response.trim()
-        ? await prepareMaskedEvidence(response, orgId)
+        ? await prepareMaskedEvidence(response)
         : null;
       const citationPreview = responseEvidence
-        ? await validatePreview.mutateAsync({ text: responseEvidence.masked, org_id: orgId })
+        ? await validatePreview.mutateAsync({ text: responseEvidence.masked })
         : null;
 
       const checklistPassed =
@@ -212,7 +213,12 @@ export default function RegistrarPage() {
         response_orig_hash: responseEvidence?.prompt_orig_hash ?? null,
         policy_id: gate.policy_id,
         decision: gate.decision as "allow" | "allow_with_masking" | "require_approval" | "block",
-        pii_technique: { ...promptEvidence.techniques, ...(responseEvidence?.techniques ?? {}) },
+        pii_technique: {
+          ...promptEvidence.techniques,
+          ...(responseEvidence?.techniques ?? {}),
+          prompt_commitment_nonce: promptEvidence.commitment_nonce,
+          ...(responseEvidence ? { response_commitment_nonce: responseEvidence.commitment_nonce } : {}),
+        },
         checklist_passed: checklistPassed,
         signals: currentSignals(),
         citations: citationPreview?.citations ?? null,

@@ -2,18 +2,37 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Client } from "pg";
 import type { Context } from "../src/server/trpc/init";
 
-const LOCAL_DB = {
+const ADMIN_DB = {
   host: "127.0.0.1",
   port: 54322,
   user: "postgres",
   password: "postgres",
   database: "postgres",
 };
+const RESTRICTED_DB = {
+  host: "127.0.0.1",
+  port: 54322,
+  user: "vexiajuris_app",
+  password: "change_me_before_activating",
+  database: "postgres",
+};
 
 let db: Client;
+let restrictedDb: Client;
 
 vi.mock("../src/lib/db", () => ({
-  withOrgContext: async (_orgId: string, fn: (client: Client) => Promise<unknown>) => fn(db),
+  withOrgContext: async (orgId: string, fn: (client: Client) => Promise<unknown>) => {
+    await restrictedDb.query("BEGIN");
+    try {
+      await restrictedDb.query(`SELECT set_config('app.current_org', $1, true)`, [orgId]);
+      const result = await fn(restrictedDb);
+      await restrictedDb.query("COMMIT");
+      return result;
+    } catch (error) {
+      await restrictedDb.query("ROLLBACK");
+      throw error;
+    }
+  },
 }));
 
 const { interactionRouter } = await import("../src/server/routers/interaction");
@@ -21,21 +40,27 @@ const { interactionRouter } = await import("../src/server/routers/interaction");
 let orgId: string;
 let userId: string;
 let policyId: string;
+let userEmail: string;
 
 beforeAll(async () => {
-  db = new Client(LOCAL_DB);
+  db = new Client(ADMIN_DB);
   await db.connect();
+  restrictedDb = new Client(RESTRICTED_DB);
+  await restrictedDb.connect();
 
+  const suffix = crypto.randomUUID().slice(0, 8);
   const org = await db.query(
-    `INSERT INTO organization (name) VALUES ('Teste Capture Interaction') RETURNING id`
+    `INSERT INTO organization (name) VALUES ($1) RETURNING id`,
+    [`Teste Capture Interaction ${suffix}`]
   );
   orgId = org.rows[0].id;
 
   const user = await db.query(
-    `INSERT INTO app_user (org_id, email, role) VALUES ($1, 'capture@exemplo.com', 'admin') RETURNING id`,
-    [orgId]
+    `INSERT INTO app_user (org_id, email, role) VALUES ($1, $2, 'admin') RETURNING id`,
+    [orgId, `capture-${suffix}@exemplo.com`]
   );
   userId = user.rows[0].id;
+  userEmail = `capture-${suffix}@exemplo.com`;
 
   const policy = await db.query(
     `INSERT INTO policy (org_id, version, rules, active)
@@ -54,17 +79,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.query(`ALTER TABLE risk_assessment DISABLE TRIGGER no_mutation_risk_assessment`);
-  await db.query(`DELETE FROM risk_assessment WHERE org_id = $1`, [orgId]);
-  await db.query(`ALTER TABLE risk_assessment ENABLE TRIGGER no_mutation_risk_assessment`);
-
-  await db.query(`ALTER TABLE ai_interaction DISABLE TRIGGER no_mutation_ai_interaction`);
-  await db.query(`DELETE FROM ai_interaction WHERE org_id = $1`, [orgId]);
-  await db.query(`ALTER TABLE ai_interaction ENABLE TRIGGER no_mutation_ai_interaction`);
-
-  await db.query(`DELETE FROM policy WHERE org_id = $1`, [orgId]);
-  await db.query(`DELETE FROM app_user WHERE org_id = $1`, [orgId]);
-  await db.query(`DELETE FROM organization WHERE id = $1`, [orgId]);
+  await restrictedDb.end();
   await db.end();
 });
 
@@ -74,8 +89,21 @@ function caller() {
     userId,
     authUserId: "00000000-0000-0000-0000-000000000001",
     role: "admin",
-    email: "capture@exemplo.com",
+    email: userEmail,
   } satisfies Context);
+}
+
+async function queryAsOrg(sql: string, values: unknown[] = []) {
+  await restrictedDb.query("BEGIN");
+  try {
+    await restrictedDb.query(`SELECT set_config('app.current_org', $1, true)`, [orgId]);
+    const result = await restrictedDb.query(sql, values);
+    await restrictedDb.query("COMMIT");
+    return result;
+  } catch (error) {
+    await restrictedDb.query("ROLLBACK");
+    throw error;
+  }
 }
 
 describe("interaction.capture", () => {
@@ -108,7 +136,7 @@ describe("interaction.capture", () => {
       citations: null,
     });
 
-    const stored = await db.query(
+    const stored = await queryAsOrg(
       `SELECT encode(prompt_orig_hash, 'hex') AS prompt_orig_hash,
               encode(response_orig_hash, 'hex') AS response_orig_hash
        FROM ai_interaction
@@ -118,7 +146,7 @@ describe("interaction.capture", () => {
     expect(stored.rows[0].prompt_orig_hash).toBe(promptHash);
     expect(stored.rows[0].response_orig_hash).toBe(responseHash);
 
-    const assessments = await db.query(
+    const assessments = await queryAsOrg(
       `SELECT decision, tier FROM risk_assessment WHERE interaction_id = $1 AND org_id = $2`,
       [result.id, orgId]
     );
