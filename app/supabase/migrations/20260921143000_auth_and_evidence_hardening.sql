@@ -64,29 +64,82 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_interaction_id_org
   ON ai_interaction(id, org_id);
 
 ALTER TABLE risk_assessment
-  ADD CONSTRAINT risk_assessment_interaction_org_fk
-  FOREIGN KEY (interaction_id, org_id)
-  REFERENCES ai_interaction(id, org_id);
+  DROP CONSTRAINT IF EXISTS risk_assessment_interaction_org_fk;
 
-ALTER TABLE checklist_response
-  ADD CONSTRAINT checklist_response_interaction_org_fk
-  FOREIGN KEY (interaction_id, org_id)
-  REFERENCES ai_interaction(id, org_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'risk_assessment_interaction_org_fk'
+      AND conrelid = 'risk_assessment'::regclass
+  ) THEN
+    ALTER TABLE risk_assessment
+      ADD CONSTRAINT risk_assessment_interaction_org_fk
+      FOREIGN KEY (interaction_id, org_id)
+      REFERENCES ai_interaction(id, org_id);
+  END IF;
+END $$;
 
-ALTER TABLE citation_check
-  ADD CONSTRAINT citation_check_interaction_org_fk
-  FOREIGN KEY (interaction_id, org_id)
-  REFERENCES ai_interaction(id, org_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'checklist_response_interaction_org_fk'
+      AND conrelid = 'checklist_response'::regclass
+  ) THEN
+    ALTER TABLE checklist_response
+      ADD CONSTRAINT checklist_response_interaction_org_fk
+      FOREIGN KEY (interaction_id, org_id)
+      REFERENCES ai_interaction(id, org_id);
+  END IF;
+END $$;
 
-ALTER TABLE proxy_request
-  ADD CONSTRAINT proxy_request_interaction_org_fk
-  FOREIGN KEY (interaction_id, org_id)
-  REFERENCES ai_interaction(id, org_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'citation_check_interaction_org_fk'
+      AND conrelid = 'citation_check'::regclass
+  ) THEN
+    ALTER TABLE citation_check
+      ADD CONSTRAINT citation_check_interaction_org_fk
+      FOREIGN KEY (interaction_id, org_id)
+      REFERENCES ai_interaction(id, org_id);
+  END IF;
+END $$;
 
-ALTER TABLE alert
-  ADD CONSTRAINT alert_interaction_org_fk
-  FOREIGN KEY (interaction_id, org_id)
-  REFERENCES ai_interaction(id, org_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'proxy_request_interaction_org_fk'
+      AND conrelid = 'proxy_request'::regclass
+  ) THEN
+    ALTER TABLE proxy_request
+      ADD CONSTRAINT proxy_request_interaction_org_fk
+      FOREIGN KEY (interaction_id, org_id)
+      REFERENCES ai_interaction(id, org_id);
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'alert_interaction_org_fk'
+      AND conrelid = 'alert'::regclass
+  ) THEN
+    ALTER TABLE alert
+      ADD CONSTRAINT alert_interaction_org_fk
+      FOREIGN KEY (interaction_id, org_id)
+      REFERENCES ai_interaction(id, org_id);
+  END IF;
+END $$;
 
 -- ============================================================
 -- 3. Dashboard summary: count real pending approvals, not every

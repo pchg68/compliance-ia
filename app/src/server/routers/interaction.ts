@@ -7,6 +7,7 @@ import {
   type HashableInteraction,
 } from "@/lib/hash";
 import { maskPii } from "@/lib/pii-masker";
+import { classifyRisk, type DecisionRule, type RiskSignals } from "@/lib/risk-engine";
 
 const validatedCitationSchema = z.object({
   raw_text: z.string(),
@@ -34,6 +35,15 @@ const captureInput = z.object({
   pii_technique: z.record(z.string(), z.string()).nullable().optional(),
   injection_flags: z.any().nullable().optional(),
   checklist_passed: z.boolean(),
+  signals: z.object({
+    task_type: z.string(),
+    data_sensitivity: z.array(z.string()),
+    legal_effect: z.boolean(),
+    autonomy: z.enum(["com_revisao", "sem_revisao"]),
+    provider_posture: z.enum(["aprovado", "nao_aprovado"]),
+    client_constraints: z.array(z.string()),
+    injection_flags: z.array(z.string()),
+  }).nullable().optional(),
   citations: z.array(validatedCitationSchema).nullable().optional(),
   token_map_ciphertext: z.string().nullable().optional(),
   token_map_wrapped_key: z.string().nullable().optional(),
@@ -82,6 +92,10 @@ export const interactionRouter = router({
       : null;
 
     const now = new Date().toISOString();
+    const sanitizedCitations = input.citations?.map((citation) => ({
+      ...citation,
+      evidence_excerpt: citation.evidence_excerpt ? maskPii(citation.evidence_excerpt).masked : null,
+    })) ?? null;
 
     const hashable: HashableInteraction = {
       org_id: orgId,
@@ -97,7 +111,7 @@ export const interactionRouter = router({
       response_orig_hash: responseOrigHash?.toString("hex") ?? null,
       decision: input.decision,
       checklist_passed: input.checklist_passed,
-      citations: input.citations ?? null,
+      citations: sanitizedCitations,
       created_at: now,
       hash_schema_version: CURRENT_HASH_SCHEMA_VERSION,
     };
@@ -125,12 +139,39 @@ export const interactionRouter = router({
         input.pii_technique ? JSON.stringify(input.pii_technique) : null,
         input.injection_flags ? JSON.stringify(input.injection_flags) : null,
         input.checklist_passed,
-        input.citations ? JSON.stringify(input.citations) : null,
+        sanitizedCitations ? JSON.stringify(sanitizedCitations) : null,
         prevHash, rowHash, now, CURRENT_HASH_SCHEMA_VERSION,
       ]
     );
 
     const interactionId = result.rows[0].id;
+
+    if (input.signals) {
+      const policyResult = await db.query(
+        `SELECT rules FROM policy WHERE org_id = $1 AND active = true ORDER BY version DESC LIMIT 1`,
+        [orgId]
+      );
+      const decisionTable: DecisionRule[] =
+        policyResult.rows.length > 0
+          ? (policyResult.rows[0].rules as { decision_table?: DecisionRule[] }).decision_table ?? []
+          : [];
+      const assessment = classifyRisk(input.signals as RiskSignals, decisionTable);
+
+      await db.query(
+        `INSERT INTO risk_assessment (interaction_id, org_id, signals, tier, matched_rule, decision, controls_applied, computed_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          interactionId,
+          orgId,
+          JSON.stringify(input.signals),
+          assessment.tier,
+          assessment.matched_rule,
+          assessment.decision,
+          JSON.stringify(assessment.controls),
+          assessment.computed_by,
+        ]
+      );
+    }
 
     if (input.token_map_ciphertext && input.token_map_wrapped_key) {
       await db.query(
@@ -145,11 +186,11 @@ export const interactionRouter = router({
       );
     }
 
-    if (input.citations && input.citations.length > 0) {
+    if (sanitizedCitations && sanitizedCitations.length > 0) {
       const cols = 10;
       const values: unknown[] = [];
       const tuples: string[] = [];
-      input.citations.forEach((citation, i) => {
+      sanitizedCitations.forEach((citation, i) => {
         const b = i * cols;
         tuples.push(
           `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10})`

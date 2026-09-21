@@ -111,7 +111,6 @@ export default function RegistrarPage() {
 
   const forward = trpc.proxy.forward.useMutation();
   const capture = trpc.interaction.capture.useMutation();
-  const assessRisk = trpc.risk.assess.useMutation();
   const submitChecklist = trpc.risk.submitChecklist.useMutation();
   const validatePreview = trpc.citation.validateText.useMutation();
 
@@ -149,7 +148,7 @@ export default function RegistrarPage() {
 
       setGate(result);
       if (result.blocked) {
-        const blockedCapture = await capture.mutateAsync({
+        await capture.mutateAsync({
           provider,
           model: model.trim() || "desconhecido",
           task_type: taskType,
@@ -162,11 +161,8 @@ export default function RegistrarPage() {
           decision: "block",
           pii_technique: promptEvidence.techniques,
           checklist_passed: false,
-          citations: null,
-        });
-        await assessRisk.mutateAsync({
-          interaction_id: blockedCapture.id,
           signals: currentSignals(),
+          citations: null,
         });
         setStep("blocked");
         return;
@@ -198,8 +194,8 @@ export default function RegistrarPage() {
       const responseEvidence = response.trim()
         ? await prepareMaskedEvidence(response, orgId)
         : null;
-      const citationPreview = response.trim()
-        ? await validatePreview.mutateAsync({ text: response, org_id: orgId })
+      const citationPreview = responseEvidence
+        ? await validatePreview.mutateAsync({ text: responseEvidence.masked, org_id: orgId })
         : null;
 
       const checklistPassed =
@@ -218,12 +214,8 @@ export default function RegistrarPage() {
         decision: gate.decision as "allow" | "allow_with_masking" | "require_approval" | "block",
         pii_technique: { ...promptEvidence.techniques, ...(responseEvidence?.techniques ?? {}) },
         checklist_passed: checklistPassed,
-        citations: citationPreview?.citations ?? null,
-      });
-
-      await assessRisk.mutateAsync({
-        interaction_id: cap.id,
         signals: currentSignals(),
+        citations: citationPreview?.citations ?? null,
       });
 
       let approvalStatus: string | null = null;

@@ -1,8 +1,10 @@
 import { z } from "zod/v4";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../trpc/init";
 import { classifyRisk, tierToRiskClass, type RiskSignals, type DecisionRule } from "@/lib/risk-engine";
 import { getChecklistForTier } from "@/lib/jurisdiction";
 import { evaluateAlerts } from "@/lib/alert-rules";
+import { maskPii } from "@/lib/pii-masker";
 
 export const proxyRouter = router({
   forward: protectedProcedure
@@ -25,6 +27,13 @@ export const proxyRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      if (maskPii(input.prompt_masked).matches.length > 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "prompt_masked contém PII não mascarado.",
+        });
+      }
+
       const orgId = ctx.orgId;
       const startTime = Date.now();
 

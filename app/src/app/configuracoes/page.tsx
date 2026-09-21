@@ -9,9 +9,9 @@ const ADMIN_ROLES = ["admin", "compliance", "developer"];
 export default function ConfiguracoesPage() {
   const { me } = useAuth();
   const isAdmin = ADMIN_ROLES.includes(me?.role ?? "");
-  const jurisdictions = trpc.jurisdiction.list.useQuery();
-  const brProfile = trpc.jurisdiction.get.useQuery({ code: "BR" });
-  const euProfile = trpc.jurisdiction.get.useQuery({ code: "EU" });
+  const jurisdictions = trpc.jurisdiction.list.useQuery(undefined, { enabled: isAdmin });
+  const brProfile = trpc.jurisdiction.get.useQuery({ code: "BR" }, { enabled: isAdmin });
+  const euProfile = trpc.jurisdiction.get.useQuery({ code: "EU" }, { enabled: isAdmin });
 
   return (
     <>
