@@ -5,6 +5,7 @@ import { classifyRisk, tierToRiskClass, type RiskSignals, type DecisionRule } fr
 import { getChecklistForTier } from "@/lib/jurisdiction";
 import { evaluateAlerts } from "@/lib/alert-rules";
 import { maskPii } from "@/lib/pii-masker";
+import { maskPiiWithNer } from "@/lib/pii-ner";
 
 export const proxyRouter = router({
   forward: protectedProcedure
@@ -31,6 +32,13 @@ export const proxyRouter = router({
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "prompt_masked contém PII não mascarado.",
+        });
+      }
+      const nerValidation = await maskPiiWithNer(input.prompt_masked);
+      if (nerValidation.matches.length > 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "prompt_masked contém PII residual não permitido para o núcleo.",
         });
       }
 

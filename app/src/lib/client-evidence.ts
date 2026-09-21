@@ -7,31 +7,14 @@ export interface ClientMaskedEvidence {
   techniques: Record<string, string>;
   pii_match_count: number;
   pii_types: string[];
-  commitment_nonce: string;
-  prompt_orig_hash: string;
-}
-
-function toHex(buffer: ArrayBuffer): string {
-  return Array.from(new Uint8Array(buffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-async function sha256Hex(value: string): Promise<string> {
-  const encoded = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", encoded);
-  return toHex(digest);
 }
 
 export async function prepareMaskedEvidence(text: string): Promise<ClientMaskedEvidence> {
   const result = maskPii(text);
-  const commitmentNonce = crypto.randomUUID();
   return {
     masked: result.masked,
     techniques: result.techniques,
     pii_match_count: result.matches.length,
     pii_types: [...new Set(result.matches.map((m) => m.type))],
-    commitment_nonce: commitmentNonce,
-    prompt_orig_hash: await sha256Hex(`${commitmentNonce}:${text}`),
   };
 }

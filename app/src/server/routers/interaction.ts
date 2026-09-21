@@ -1,5 +1,6 @@
 import { z } from "zod/v4";
 import { TRPCError } from "@trpc/server";
+import { createHash } from "crypto";
 import { protectedProcedure, router } from "../trpc/init";
 import {
   computeRowHash,
@@ -27,8 +28,8 @@ const captureInput = z.object({
   risk_class: z.enum(["excessivo", "alto", "moderado", "baixo"]),
   prompt_masked: z.string(),
   response_masked: z.string().nullable(),
-  prompt_orig_hash: z.string().regex(/^[0-9a-f]{64}$/i),
-  response_orig_hash: z.string().regex(/^[0-9a-f]{64}$/i).nullable(),
+  prompt_orig_hash: z.string().regex(/^[0-9a-f]{64}$/i).optional(),
+  response_orig_hash: z.string().regex(/^[0-9a-f]{64}$/i).nullable().optional(),
   policy_id: z.string().guid(),
   // Mesma taxonomia da CHECK constraint em ai_interaction.decision e do risk-engine.
   decision: z.enum(["allow", "allow_with_masking", "require_approval", "block"]),
@@ -86,9 +87,9 @@ export const interactionRouter = router({
     const prevHash: Buffer | null =
       lastRow.rows.length > 0 ? lastRow.rows[0].row_hash : null;
 
-    const promptOrigHash = Buffer.from(input.prompt_orig_hash, "hex");
-    const responseOrigHash = input.response_orig_hash
-      ? Buffer.from(input.response_orig_hash, "hex")
+    const promptOrigHash = createHash("sha256").update(input.prompt_masked).digest();
+    const responseOrigHash = input.response_masked
+      ? createHash("sha256").update(input.response_masked).digest()
       : null;
 
     const now = new Date().toISOString();

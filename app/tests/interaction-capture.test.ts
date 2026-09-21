@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Client } from "pg";
+import { createHash } from "crypto";
 import type { Context } from "../src/server/trpc/init";
 
 const ADMIN_DB = {
@@ -108,18 +109,16 @@ async function queryAsOrg(sql: string, values: unknown[] = []) {
 
 describe("interaction.capture", () => {
   it("persiste hashes fornecidos pelo cliente e mantém a cadeia válida sem plaintext", async () => {
-    const promptHash = "a".repeat(64);
-    const responseHash = "b".repeat(64);
+    const promptMasked = "Prompt com [CPF] mascarado";
+    const responseMasked = "Resposta com citação sem PII";
 
     const result = await caller().capture({
       provider: "anthropic",
       model: "claude-sonnet-5",
       task_type: "pesquisa",
       risk_class: "baixo",
-      prompt_masked: "Prompt com [CPF] mascarado",
-      response_masked: "Resposta com citação sem PII",
-      prompt_orig_hash: promptHash,
-      response_orig_hash: responseHash,
+      prompt_masked: promptMasked,
+      response_masked: responseMasked,
       policy_id: policyId,
       decision: "allow",
       pii_technique: { cpf: "regex" },
@@ -143,8 +142,8 @@ describe("interaction.capture", () => {
        WHERE id = $1`,
       [result.id]
     );
-    expect(stored.rows[0].prompt_orig_hash).toBe(promptHash);
-    expect(stored.rows[0].response_orig_hash).toBe(responseHash);
+    expect(stored.rows[0].prompt_orig_hash).toBe(createHash("sha256").update(promptMasked).digest("hex"));
+    expect(stored.rows[0].response_orig_hash).toBe(createHash("sha256").update(responseMasked).digest("hex"));
 
     const assessments = await queryAsOrg(
       `SELECT decision, tier FROM risk_assessment WHERE interaction_id = $1 AND org_id = $2`,
@@ -168,8 +167,6 @@ describe("interaction.capture", () => {
         risk_class: "alto",
         prompt_masked: "Prompt mascarado",
         response_masked: null,
-        prompt_orig_hash: "c".repeat(64),
-        response_orig_hash: null,
         policy_id: policyId,
         decision: "require_approval",
         pii_technique: { cpf: "regex" },

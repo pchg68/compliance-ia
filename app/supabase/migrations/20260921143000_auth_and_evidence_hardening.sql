@@ -165,7 +165,8 @@ LEFT JOIN (
   SELECT
     org_id,
     interaction_id,
-    bool_or(approval_status = 'pendente') AS pending_approval
+    bool_or(approval_status = 'pendente')
+      AND NOT bool_or(approval_status IN ('aprovado', 'bloqueado', 'ressalva')) AS pending_approval
   FROM checklist_response
   GROUP BY org_id, interaction_id
 ) cr
