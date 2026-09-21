@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Client } from "pg";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import type { Context } from "../src/server/trpc/init";
 
 const ADMIN_DB = {
@@ -49,7 +49,7 @@ beforeAll(async () => {
   restrictedDb = new Client(RESTRICTED_DB);
   await restrictedDb.connect();
 
-  const suffix = crypto.randomUUID().slice(0, 8);
+  const suffix = randomUUID().slice(0, 8);
   const org = await db.query(
     `INSERT INTO organization (name) VALUES ($1) RETURNING id`,
     [`Teste Capture Interaction ${suffix}`]

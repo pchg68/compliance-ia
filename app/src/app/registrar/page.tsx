@@ -154,7 +154,7 @@ export default function RegistrarPage() {
           prompt_masked: promptEvidence.masked,
           response_masked: null,
           policy_id: result.policy_id!,
-          decision: "block",
+          decision: result.decision as "allow" | "allow_with_masking" | "require_approval" | "block",
           pii_technique: promptEvidence.techniques,
           checklist_passed: false,
           signals: currentSignals(),
