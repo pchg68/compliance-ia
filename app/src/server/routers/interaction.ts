@@ -7,7 +7,7 @@ import {
   type HashableInteraction,
 } from "@/lib/hash";
 import { maskPii } from "@/lib/pii-masker";
-import { classifyRisk, type DecisionRule, type RiskSignals } from "@/lib/risk-engine";
+import { classifyRisk, tierToRiskClass, type DecisionRule, type RiskSignals } from "@/lib/risk-engine";
 
 const validatedCitationSchema = z.object({
   raw_text: z.string(),
@@ -93,9 +93,36 @@ export const interactionRouter = router({
 
     const now = new Date().toISOString();
     const sanitizedCitations = input.citations?.map((citation) => ({
-      ...citation,
+      raw_text: maskPii(citation.raw_text).masked,
+      cite_type: citation.cite_type,
+      canonical_key: citation.canonical_key ? maskPii(citation.canonical_key).masked : null,
+      status: citation.status,
+      source: citation.source ? maskPii(citation.source).masked : null,
+      source_ref: citation.source_ref ? maskPii(citation.source_ref).masked : null,
       evidence_excerpt: citation.evidence_excerpt ? maskPii(citation.evidence_excerpt).masked : null,
+      confidence: citation.confidence,
     })) ?? null;
+    let computedAssessment: ReturnType<typeof classifyRisk> | null = null;
+
+    if (input.signals) {
+      const policyResult = await db.query(
+        `SELECT rules FROM policy WHERE org_id = $1 AND active = true ORDER BY version DESC LIMIT 1`,
+        [orgId]
+      );
+      const decisionTable: DecisionRule[] =
+        policyResult.rows.length > 0
+          ? (policyResult.rows[0].rules as { decision_table?: DecisionRule[] }).decision_table ?? []
+          : [];
+      const assessment = classifyRisk(input.signals as RiskSignals, decisionTable);
+      computedAssessment = assessment;
+
+      if (tierToRiskClass(assessment.tier) !== input.risk_class || assessment.decision !== input.decision) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "risk_class/decision divergentes da avaliação server-side.",
+        });
+      }
+    }
 
     const hashable: HashableInteraction = {
       org_id: orgId,
@@ -146,17 +173,7 @@ export const interactionRouter = router({
 
     const interactionId = result.rows[0].id;
 
-    if (input.signals) {
-      const policyResult = await db.query(
-        `SELECT rules FROM policy WHERE org_id = $1 AND active = true ORDER BY version DESC LIMIT 1`,
-        [orgId]
-      );
-      const decisionTable: DecisionRule[] =
-        policyResult.rows.length > 0
-          ? (policyResult.rows[0].rules as { decision_table?: DecisionRule[] }).decision_table ?? []
-          : [];
-      const assessment = classifyRisk(input.signals as RiskSignals, decisionTable);
-
+    if (input.signals && computedAssessment) {
       await db.query(
         `INSERT INTO risk_assessment (interaction_id, org_id, signals, tier, matched_rule, decision, controls_applied, computed_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
@@ -164,11 +181,11 @@ export const interactionRouter = router({
           interactionId,
           orgId,
           JSON.stringify(input.signals),
-          assessment.tier,
-          assessment.matched_rule,
-          assessment.decision,
-          JSON.stringify(assessment.controls),
-          assessment.computed_by,
+          computedAssessment.tier,
+          computedAssessment.matched_rule,
+          computedAssessment.decision,
+          JSON.stringify(computedAssessment.controls),
+          computedAssessment.computed_by,
         ]
       );
     }
