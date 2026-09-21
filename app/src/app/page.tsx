@@ -61,6 +61,7 @@ function StatusBadge({ status }: { status: string }) {
 export default function DashboardPage() {
   const orgId = useOrgId();
   const summary = trpc.dashboard.summary.useQuery({ org_id: orgId });
+  const chain = trpc.interaction.verifyChain.useQuery({ org_id: orgId });
   const daily = trpc.dashboard.daily.useQuery({ org_id: orgId, days: 7 });
   const alerts = trpc.dashboard.alertStats.useQuery({ org_id: orgId });
   const citations = trpc.dashboard.citationStats.useQuery({ org_id: orgId });
@@ -78,9 +79,21 @@ export default function DashboardPage() {
               <p className="text-sm text-gray-500 mt-1">Visão geral do uso de IA e integridade da trilha de auditoria</p>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-lg text-sm font-medium">
-                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                Trilha íntegra
+              <div className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${
+                chain.data?.valid
+                  ? "bg-emerald-50 text-emerald-700"
+                  : chain.data
+                    ? "bg-red-50 text-red-700"
+                    : "bg-slate-100 text-slate-600"
+              }`}>
+                <div className={`w-2 h-2 rounded-full ${
+                  chain.data?.valid ? "bg-emerald-500 animate-pulse" : chain.data ? "bg-red-500" : "bg-slate-400"
+                }`} />
+                {chain.data
+                  ? chain.data.valid
+                    ? `Cadeia íntegra — ${chain.data.checked} registros`
+                    : "Cadeia precisa de revisão"
+                  : "Verificando cadeia"}
               </div>
             </div>
           </div>

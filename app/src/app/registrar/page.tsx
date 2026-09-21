@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { Nav, PageWrapper } from "../components/nav";
 import { trpc } from "@/lib/trpc-client";
+import { useOrgId } from "@/lib/auth-context";
+import { prepareMaskedEvidence } from "@/lib/client-evidence";
 
 /**
  * Fluxo completo de registro de uma interação com IA (Fase 1):
@@ -85,6 +87,7 @@ const EIXO_LABEL: Record<string, string> = {
 };
 
 export default function RegistrarPage() {
+  const orgId = useOrgId();
   const [step, setStep] = useState<"form" | "blocked" | "checklist" | "done">("form");
 
   // Formulário
@@ -107,10 +110,22 @@ export default function RegistrarPage() {
   const [registering, setRegistering] = useState(false);
 
   const forward = trpc.proxy.forward.useMutation();
-  const mask = trpc.masker.mask.useMutation();
   const capture = trpc.interaction.capture.useMutation();
+  const assessRisk = trpc.risk.assess.useMutation();
   const submitChecklist = trpc.risk.submitChecklist.useMutation();
-  const validateCitations = trpc.citation.validate.useMutation();
+  const validatePreview = trpc.citation.validateText.useMutation();
+
+  function currentSignals() {
+    return {
+      task_type: taskType,
+      data_sensitivity: sensitivity,
+      legal_effect: legalEffect,
+      autonomy,
+      provider_posture: providerPosture,
+      client_constraints: clientProibeIa ? ["proibe_ia"] : [],
+      injection_flags: [],
+    } as const;
+  }
 
   function toggleSensitivity(value: string) {
     setSensitivity((prev) =>
@@ -121,23 +136,38 @@ export default function RegistrarPage() {
   async function avaliarRisco() {
     setFlowError(null);
     try {
+      const promptEvidence = await prepareMaskedEvidence(prompt, orgId);
       const result = (await forward.mutateAsync({
         provider,
         model: model.trim() || "desconhecido",
-        prompt,
+        prompt_masked: promptEvidence.masked,
+        pii_match_count: promptEvidence.pii_match_count,
+        pii_types: promptEvidence.pii_types,
         task_type: taskType,
-        signals: {
-          data_sensitivity: sensitivity,
-          legal_effect: legalEffect,
-          autonomy,
-          provider_posture: providerPosture,
-          client_constraints: clientProibeIa ? ["proibe_ia"] : [],
-          injection_flags: [],
-        },
+        signals: currentSignals(),
       })) as GateResult;
 
       setGate(result);
       if (result.blocked) {
+        const blockedCapture = await capture.mutateAsync({
+          provider,
+          model: model.trim() || "desconhecido",
+          task_type: taskType,
+          risk_class: (result.risk_class ?? "excessivo") as "excessivo" | "alto" | "moderado" | "baixo",
+          prompt_masked: promptEvidence.masked,
+          response_masked: null,
+          prompt_orig_hash: promptEvidence.prompt_orig_hash,
+          response_orig_hash: null,
+          policy_id: result.policy_id!,
+          decision: "block",
+          pii_technique: promptEvidence.techniques,
+          checklist_passed: false,
+          citations: null,
+        });
+        await assessRisk.mutateAsync({
+          interaction_id: blockedCapture.id,
+          signals: currentSignals(),
+        });
         setStep("blocked");
         return;
       }
@@ -164,11 +194,12 @@ export default function RegistrarPage() {
     setFlowError(null);
     setRegistering(true);
     try {
-      // Mascarar na borda (mesma função determinística usada no gate) — o núcleo
-      // rejeita capture com PII residual (verificação fail-closed no servidor).
-      const promptMask = await mask.mutateAsync({ text: prompt });
-      const respMask = response.trim()
-        ? await mask.mutateAsync({ text: response })
+      const promptEvidence = await prepareMaskedEvidence(prompt, orgId);
+      const responseEvidence = response.trim()
+        ? await prepareMaskedEvidence(response, orgId)
+        : null;
+      const citationPreview = response.trim()
+        ? await validatePreview.mutateAsync({ text: response, org_id: orgId })
         : null;
 
       const checklistPassed =
@@ -179,15 +210,20 @@ export default function RegistrarPage() {
         model: model.trim() || "desconhecido",
         task_type: taskType,
         risk_class: (gate.risk_class ?? "alto") as "excessivo" | "alto" | "moderado" | "baixo",
-        prompt_original: prompt,
-        prompt_masked: promptMask.masked,
-        response_original: response.trim() || null,
-        response_masked: respMask?.masked ?? null,
+        prompt_masked: promptEvidence.masked,
+        response_masked: responseEvidence?.masked ?? null,
+        prompt_orig_hash: promptEvidence.prompt_orig_hash,
+        response_orig_hash: responseEvidence?.prompt_orig_hash ?? null,
         policy_id: gate.policy_id,
         decision: gate.decision as "allow" | "allow_with_masking" | "require_approval" | "block",
-        pii_technique: { ...promptMask.techniques, ...(respMask?.techniques ?? {}) },
+        pii_technique: { ...promptEvidence.techniques, ...(responseEvidence?.techniques ?? {}) },
         checklist_passed: checklistPassed,
-        citations: null,
+        citations: citationPreview?.citations ?? null,
+      });
+
+      await assessRisk.mutateAsync({
+        interaction_id: cap.id,
+        signals: currentSignals(),
       });
 
       let approvalStatus: string | null = null;
@@ -205,14 +241,9 @@ export default function RegistrarPage() {
         approvalStatus = sub.approval_status;
       }
 
-      let citations: DoneResult["citations"] = null;
-      if (response.trim()) {
-        const cit = await validateCitations.mutateAsync({
-          interaction_id: cap.id,
-          response_text: response,
-        });
-        citations = { total: cit.total, by_status: cit.by_status };
-      }
+      const citations = citationPreview
+        ? { total: citationPreview.total, by_status: citationPreview.by_status }
+        : null;
 
       setDone({ seq: cap.seq, row_hash: cap.row_hash, approval_status: approvalStatus, citations });
       setStep("done");

@@ -1,6 +1,5 @@
 import { z } from "zod/v4";
 import { protectedProcedure, router } from "../trpc/init";
-import { maskPiiWithNer } from "@/lib/pii-ner";
 import { classifyRisk, tierToRiskClass, type RiskSignals, type DecisionRule } from "@/lib/risk-engine";
 import { getChecklistForTier } from "@/lib/jurisdiction";
 import { evaluateAlerts } from "@/lib/alert-rules";
@@ -11,7 +10,9 @@ export const proxyRouter = router({
       z.object({
         provider: z.string(),
         model: z.string(),
-        prompt: z.string(),
+        prompt_masked: z.string(),
+        pii_match_count: z.number().int().nonnegative().default(0),
+        pii_types: z.array(z.string()).default([]),
         task_type: z.string(),
         signals: z.object({
           data_sensitivity: z.array(z.string()),
@@ -27,10 +28,7 @@ export const proxyRouter = router({
       const orgId = ctx.orgId;
       const startTime = Date.now();
 
-      // 1. Mascarar PII (regex estruturado + NER de nomes/endereços quando disponível)
-      const maskResult = await maskPiiWithNer(input.prompt);
-
-      // 2. Classificar risco
+      // 1. Classificar risco
       const policyResult = await ctx.db!.query(
         `SELECT id, rules, jurisdiction FROM policy WHERE org_id = $1 AND active = true ORDER BY version DESC LIMIT 1`,
         [orgId]
@@ -49,7 +47,7 @@ export const proxyRouter = router({
       const risk = classifyRisk(riskSignals, decisionTable);
       const checklistItems = getChecklistForTier(jurisdictionCode, risk.tier);
 
-      // 3. Decisão de gate
+      // 2. Decisão de gate
       if (risk.decision === "block") {
         // Registrar proxy_request com bloqueio
         await ctx.db!.query(
@@ -59,7 +57,7 @@ export const proxyRouter = router({
         );
 
         // Gerar alertas
-        const alerts = evaluateAlerts(riskSignals, "block", maskResult.matches.length);
+        const alerts = evaluateAlerts(riskSignals, "block", input.pii_match_count);
         for (const alert of alerts) {
           await ctx.db!.query(
             `INSERT INTO alert (org_id, severity, category, title, description)
@@ -74,12 +72,13 @@ export const proxyRouter = router({
           risk_tier: risk.tier,
           risk_class: tierToRiskClass(risk.tier),
           decision: risk.decision,
-          pii_masked: maskResult.matches.length,
+          pii_masked: input.pii_match_count,
+          pii_types: input.pii_types,
           alerts_generated: alerts.length,
         };
       }
 
-      // 4. Em produção: forward para o provedor. Aqui, simulamos.
+      // 3. Em produção: forward para o provedor. Aqui, simulamos.
       const latencyMs = Date.now() - startTime;
 
       await ctx.db!.query(
@@ -89,7 +88,7 @@ export const proxyRouter = router({
       );
 
       // Gerar alertas se necessário
-      const alerts = evaluateAlerts(riskSignals, risk.decision, maskResult.matches.length);
+      const alerts = evaluateAlerts(riskSignals, risk.decision, input.pii_match_count);
       for (const alert of alerts) {
         await ctx.db!.query(
           `INSERT INTO alert (org_id, severity, category, title, description)
@@ -103,9 +102,9 @@ export const proxyRouter = router({
         risk_tier: risk.tier,
         risk_class: tierToRiskClass(risk.tier),
         decision: risk.decision,
-        prompt_masked: maskResult.masked,
-        pii_masked: maskResult.matches.length,
-        pii_types: [...new Set(maskResult.matches.map((m) => m.type))],
+        prompt_masked: input.prompt_masked,
+        pii_masked: input.pii_match_count,
+        pii_types: [...new Set(input.pii_types)],
         controls: risk.controls,
         alerts_generated: alerts.length,
         requires_approval: risk.decision === "require_approval",

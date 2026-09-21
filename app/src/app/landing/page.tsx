@@ -45,7 +45,7 @@ export default function LandingPage() {
           <p className="text-lg text-gray-600 mt-6 max-w-2xl mx-auto leading-relaxed">
             Vexiajuris Guard é a camada de governança que valida as citações das suas peças contra
             fontes oficiais e registra cada uso de IA numa trilha de auditoria imutável.
-            Funciona por cima de qualquer IA — ChatGPT, Gemini, Jus IA.
+            No estágio atual, opera como um workspace governado de captura, revisão e evidência para pilotos assistidos.
           </p>
           <div className="flex items-center justify-center gap-3 mt-8">
             <Link href="/" className="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
@@ -94,9 +94,9 @@ export default function LandingPage() {
         <p className="text-gray-500 text-center mb-10">Do controle individual à prova institucional</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Feature icon="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" title="Validador de citações">
-            Cada lei, súmula e processo citado é conferido contra DATAJUD/CNJ, LexML e súmulas
-            oficiais do STJ/STF. O que não se confirma é marcado como não-verificável — nunca
-            inventamos uma fonte.
+            Leis, súmulas e processos citados são conferidos contra DATAJUD/CNJ, LexML e a base
+            local de súmulas oficiais já ingeridas. O que não se confirma é marcado como
+            não-verificável — nunca inventamos uma fonte.
           </Feature>
           <Feature icon="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" title="Trilha de auditoria imutável">
             Toda interação com IA entra numa cadeia de hash criptográfico que impede alteração
@@ -116,8 +116,8 @@ export default function LandingPage() {
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Independente da IA que você usa</h2>
             <p className="text-gray-600 leading-relaxed mb-4">
               Vexiajuris Guard não é mais um copiloto jurídico. É a camada de compliance do copiloto —
-              funciona por cima do ChatGPT, do Gemini, do Jus IA ou de qualquer modelo. Você não
-              troca de ferramenta; você ganha controle e prova sobre o uso de todas elas.
+              hoje focada em captura governada, aprovação e validação para uso controlado de IA em
+              escritórios e departamentos jurídicos.
             </p>
             <ul className="space-y-2">
               {[

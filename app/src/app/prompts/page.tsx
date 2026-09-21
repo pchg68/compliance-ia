@@ -162,12 +162,24 @@ export default function PromptsPage() {
   const orgId = useOrgId();
   const { me } = useAuth();
   const isAdmin = ADMIN_ROLES.includes(me?.role ?? "");
-  const prompts = trpc.prompt.list.useQuery({ org_id: orgId });
+  const prompts = trpc.prompt.list.useQuery({ org_id: orgId }, { enabled: isAdmin });
 
   return (
     <>
       <Nav />
       <PageWrapper>
+        {!isAdmin ? (
+          <div className="min-h-screen flex items-center justify-center px-8">
+            <div className="bg-white rounded-xl border border-gray-100 p-10 text-center shadow-sm max-w-md">
+              <h2 className="font-semibold text-gray-900 mb-2">Acesso restrito</h2>
+              <p className="text-sm text-gray-500">
+                A biblioteca de prompts aprovada é visível apenas para perfis administrativos
+                (admin, compliance ou desenvolvedor).
+              </p>
+            </div>
+          </div>
+        ) : (
+        <>
         <header className="bg-white border-b border-gray-100 px-8 py-6">
           <h1 className="text-2xl font-bold text-gray-900">Biblioteca de Prompts</h1>
           <p className="text-sm text-gray-500 mt-1">Prompts pré-aprovados e classificados por risco para uso seguro</p>
@@ -231,6 +243,8 @@ export default function PromptsPage() {
             </div>
           ) : null}
         </main>
+        </>
+        )}
       </PageWrapper>
     </>
   );

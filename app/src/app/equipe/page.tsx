@@ -29,7 +29,7 @@ export default function EquipePage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const users = trpc.onboarding.listUsers.useQuery();
+  const users = trpc.onboarding.listUsers.useQuery(undefined, { enabled: isAdmin });
   const invite = trpc.onboarding.inviteUser.useMutation({
     onSuccess: (data) => {
       setSuccess(`${data.email} adicionado como ${ROLE_LABELS[data.role]}.`);
@@ -47,6 +47,18 @@ export default function EquipePage() {
     <>
       <Nav />
       <PageWrapper>
+        {!isAdmin ? (
+          <div className="min-h-screen flex items-center justify-center px-8">
+            <div className="bg-white rounded-xl border border-gray-100 p-10 text-center shadow-sm max-w-md">
+              <h2 className="font-semibold text-gray-900 mb-2">Acesso restrito</h2>
+              <p className="text-sm text-gray-500">
+                A gestão de equipe é visível apenas para perfis administrativos
+                (admin, compliance ou desenvolvedor).
+              </p>
+            </div>
+          </div>
+        ) : (
+        <>
         <header className="bg-white border-b border-gray-100 px-8 py-6">
           <h1 className="text-2xl font-bold text-gray-900">Equipe</h1>
           <p className="text-sm text-gray-500 mt-1">Gerencie os membros e perfis de acesso do escritório</p>
@@ -139,6 +151,8 @@ export default function EquipePage() {
             )}
           </div>
         </main>
+        </>
+        )}
       </PageWrapper>
     </>
   );

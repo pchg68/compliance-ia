@@ -3,28 +3,38 @@ import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../trpc/init";
 import {
   computeRowHash,
-  computeContentHash,
   CURRENT_HASH_SCHEMA_VERSION,
   type HashableInteraction,
 } from "@/lib/hash";
 import { maskPii } from "@/lib/pii-masker";
+
+const validatedCitationSchema = z.object({
+  raw_text: z.string(),
+  cite_type: z.string(),
+  canonical_key: z.string().nullable(),
+  status: z.enum(["confirmada", "divergente", "desatualizada", "nao_localizada", "nao_verificavel"]),
+  source: z.string().nullable(),
+  source_ref: z.string().nullable(),
+  evidence_excerpt: z.string().nullable(),
+  confidence: z.number().nullable(),
+});
 
 const captureInput = z.object({
   provider: z.string(),
   model: z.string(),
   task_type: z.string(),
   risk_class: z.enum(["excessivo", "alto", "moderado", "baixo"]),
-  prompt_original: z.string(),
   prompt_masked: z.string(),
-  response_original: z.string().nullable(),
   response_masked: z.string().nullable(),
+  prompt_orig_hash: z.string().regex(/^[0-9a-f]{64}$/i),
+  response_orig_hash: z.string().regex(/^[0-9a-f]{64}$/i).nullable(),
   policy_id: z.string().guid(),
   // Mesma taxonomia da CHECK constraint em ai_interaction.decision e do risk-engine.
   decision: z.enum(["allow", "allow_with_masking", "require_approval", "block"]),
   pii_technique: z.record(z.string(), z.string()).nullable().optional(),
   injection_flags: z.any().nullable().optional(),
   checklist_passed: z.boolean(),
-  citations: z.any().nullable().optional(),
+  citations: z.array(validatedCitationSchema).nullable().optional(),
   token_map_ciphertext: z.string().nullable().optional(),
   token_map_wrapped_key: z.string().nullable().optional(),
 });
@@ -51,12 +61,9 @@ export const interactionRouter = router({
     const orgId = ctx.orgId;
     const db = ctx.db!;
 
-    // Advisory lock por org para serializar a cadeia de hash. Transação é a que
-    // já foi aberta pelo middleware protectedProcedure (withOrgContext) — não
-    // abrimos uma nova aqui, só reaproveitamos a mesma conexão/transação.
-    const lockKey = Buffer.from(orgId.replace(/-/g, ""), "hex");
-    const lockId = lockKey.readInt32BE(0);
-    await db.query("SELECT pg_advisory_xact_lock($1)", [lockId]);
+    // Advisory lock por org para serializar a cadeia de hash sem depender só
+    // dos primeiros 32 bits do UUID do tenant.
+    await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [orgId]);
 
     // Buscar último seq e prev_hash do tenant
     const lastRow = await db.query(
@@ -69,10 +76,9 @@ export const interactionRouter = router({
     const prevHash: Buffer | null =
       lastRow.rows.length > 0 ? lastRow.rows[0].row_hash : null;
 
-    const salt = orgId;
-    const promptOrigHash = computeContentHash(input.prompt_original, salt);
-    const responseOrigHash = input.response_original
-      ? computeContentHash(input.response_original, salt)
+    const promptOrigHash = Buffer.from(input.prompt_orig_hash, "hex");
+    const responseOrigHash = input.response_orig_hash
+      ? Buffer.from(input.response_orig_hash, "hex")
       : null;
 
     const now = new Date().toISOString();
@@ -136,6 +142,36 @@ export const interactionRouter = router({
           Buffer.from(input.token_map_ciphertext, "base64"),
           Buffer.from(input.token_map_wrapped_key, "base64"),
         ]
+      );
+    }
+
+    if (input.citations && input.citations.length > 0) {
+      const cols = 10;
+      const values: unknown[] = [];
+      const tuples: string[] = [];
+      input.citations.forEach((citation, i) => {
+        const b = i * cols;
+        tuples.push(
+          `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10})`
+        );
+        values.push(
+          interactionId,
+          orgId,
+          citation.raw_text,
+          citation.cite_type,
+          citation.canonical_key,
+          citation.status,
+          citation.source,
+          citation.source_ref,
+          citation.evidence_excerpt,
+          citation.confidence
+        );
+      });
+      await db.query(
+        `INSERT INTO citation_check
+          (interaction_id, org_id, raw_text, cite_type, canonical_key, status, source, source_ref, evidence_excerpt, confidence)
+         VALUES ${tuples.join(",")}`,
+        values
       );
     }
 

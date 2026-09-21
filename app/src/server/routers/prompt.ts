@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { protectedProcedure, adminProcedure, router } from "../trpc/init";
+import { adminProcedure, router } from "../trpc/init";
 
 export const promptRouter = router({
   // Prompts pré-aprovados são curadoria administrativa (invariante 7).
@@ -30,7 +30,7 @@ export const promptRouter = router({
       return result.rows[0];
     }),
 
-  list: protectedProcedure
+  list: adminProcedure
     .input(
       z.object({
         org_id: z.string().guid().optional(),
@@ -60,7 +60,7 @@ export const promptRouter = router({
       return result.rows;
     }),
 
-  get: protectedProcedure
+  get: adminProcedure
     .input(z.object({ id: z.string().guid() }))
     .query(async ({ ctx, input }) => {
       const result = await ctx.db!.query(
@@ -70,7 +70,7 @@ export const promptRouter = router({
       return result.rows[0] ?? null;
     }),
 
-  render: protectedProcedure
+  render: adminProcedure
     .input(
       z.object({
         template_id: z.string().guid(),

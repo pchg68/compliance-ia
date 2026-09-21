@@ -2,8 +2,13 @@
 
 import { Nav, PageWrapper } from "../components/nav";
 import { trpc } from "@/lib/trpc-client";
+import { useAuth } from "@/lib/auth-context";
+
+const ADMIN_ROLES = ["admin", "compliance", "developer"];
 
 export default function ConfiguracoesPage() {
+  const { me } = useAuth();
+  const isAdmin = ADMIN_ROLES.includes(me?.role ?? "");
   const jurisdictions = trpc.jurisdiction.list.useQuery();
   const brProfile = trpc.jurisdiction.get.useQuery({ code: "BR" });
   const euProfile = trpc.jurisdiction.get.useQuery({ code: "EU" });
@@ -12,6 +17,18 @@ export default function ConfiguracoesPage() {
     <>
       <Nav />
       <PageWrapper>
+        {!isAdmin ? (
+          <div className="min-h-screen flex items-center justify-center px-8">
+            <div className="bg-white rounded-xl border border-gray-100 p-10 text-center shadow-sm max-w-md">
+              <h2 className="font-semibold text-gray-900 mb-2">Acesso restrito</h2>
+              <p className="text-sm text-gray-500">
+                As configurações de política e jurisdição são visíveis apenas para perfis administrativos
+                (admin, compliance ou desenvolvedor).
+              </p>
+            </div>
+          </div>
+        ) : (
+        <>
         <header className="bg-white border-b border-gray-100 px-8 py-6">
           <h1 className="text-2xl font-bold text-gray-900">Configurações</h1>
           <p className="text-sm text-gray-500 mt-1">Jurisdições, políticas de risco e parâmetros do sistema</p>
@@ -86,6 +103,8 @@ export default function ConfiguracoesPage() {
             )}
           </div>
         </main>
+        </>
+        )}
       </PageWrapper>
     </>
   );

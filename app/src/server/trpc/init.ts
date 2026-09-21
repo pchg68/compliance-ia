@@ -6,6 +6,7 @@ import { withOrgContext } from "@/lib/db";
 export interface Context {
   orgId: string | null;
   userId: string | null;
+  authUserId: string | null;
   role: string | null;
   email: string | null;
   /** Client com app.current_org já setado (via withOrgContext) — só em protectedProcedure/adminProcedure. */

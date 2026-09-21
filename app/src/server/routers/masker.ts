@@ -1,10 +1,10 @@
 import { z } from "zod/v4";
-import { publicProcedure, router } from "../trpc/init";
+import { protectedProcedure, router } from "../trpc/init";
 import { unmaskPii } from "@/lib/pii-masker";
 import { maskPiiWithNer } from "@/lib/pii-ner";
 
 export const maskerRouter = router({
-  mask: publicProcedure
+  mask: protectedProcedure
     .input(z.object({ text: z.string() }))
     .mutation(async ({ input }) => {
       // Regex estruturado + NER de nomes/endereços (quando ANTHROPIC_API_KEY
@@ -20,7 +20,7 @@ export const maskerRouter = router({
       };
     }),
 
-  unmask: publicProcedure
+  unmask: protectedProcedure
     .input(
       z.object({
         masked: z.string(),
